@@ -16,6 +16,7 @@ const fallback = {
 const state = { board: null };
 const app = document.getElementById("app");
 const byId = (id) => document.getElementById(id);
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
 async function start() {
   try {
@@ -70,13 +71,13 @@ function renderHome() {
     <p class="page-lead">${escapeHtml(state.board.description || "The central record of the Order: doctrine, authority, training and law.")}</p>
     <div class="archive-meta"><span><b>${state.board.lists.length}</b> sections</span><span><b>${total}</b> records</span><span>${state.board.preview ? "Preview source" : "Live Trello source"}</span></div>
     <section class="section-index" aria-label="Doctrine sections">
-      ${state.board.lists.map((section, index) => `<a class="section-tile" href="${sectionHref(section)}" data-link>
+      ${state.board.lists.map((section, index) => `<a class="section-tile" href="${sectionHref(section)}" data-link style="--reveal-delay:${Math.min(index * 55, 440)}ms">
         <span class="section-number">SECTION ${String(index + 1).padStart(2, "0")}</span><span class="arrow">→</span>
         <h2>${escapeHtml(section.name)}</h2><p>${section.cards.length} ${section.cards.length === 1 ? "record" : "records"}</p>
       </a>`).join("")}
     </section>
   </div>`;
-  bindLinks(app); focusPage();
+  bindLinks(app); bindMotion(app); focusPage();
 }
 
 function renderSection(section) {
@@ -86,15 +87,15 @@ function renderSection(section) {
     <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/" data-link>Archive</a><span>/</span><span>${escapeHtml(section.name)}</span></nav>
     <header class="section-header"><div class="eyebrow">Section ${String(index + 1).padStart(2, "0")}</div><h1>${escapeHtml(section.name)}</h1></header>
     <section class="record-list" aria-label="Records in ${escapeHtml(section.name)}">
-      ${section.cards.length ? section.cards.map((record) => recordRow(record)).join("") : `<div class="empty-page"><p>No records are currently filed in this section.</p></div>`}
+      ${section.cards.length ? section.cards.map((record, index) => recordRow(record, index)).join("") : `<div class="empty-page"><p>No records are currently filed in this section.</p></div>`}
     </section>
   </div>`;
-  bindLinks(app); bindImageFallbacks(app); focusPage();
+  bindLinks(app); bindImageFallbacks(app); bindMotion(app); focusPage();
 }
 
-function recordRow(record) {
+function recordRow(record, index = 0) {
   const image = primaryImage(record);
-  return `<a class="record-row" href="${recordHref(record)}" data-link>
+  return `<a class="record-row" href="${recordHref(record)}" data-link style="--reveal-delay:${Math.min(index * 45, 360)}ms">
     <div><h2>${escapeHtml(record.name)}</h2><p>${escapeHtml(excerpt(record.description))}</p></div>
     ${image ? `<div class="record-image"><img src="${escapeAttr(image.imageUrl)}" alt="${escapeAttr(image.name || record.name)}" loading="lazy" /></div>` : `<div></div>`}
     <span class="record-arrow">→</span>
@@ -125,7 +126,7 @@ function renderRecord(record) {
     ${documents.length || record.url ? `<section class="attachments"><h2>References</h2><div class="attachment-links">${documents.map((item) => `<a href="${safeUrl(item.url)}" target="_blank" rel="noopener">${escapeHtml(item.name || "Attachment")} ↗</a>`).join("")}${record.url ? `<a href="${safeUrl(record.url)}" target="_blank" rel="noopener">View source card ↗</a>` : ""}</div></section>` : ""}
     ${(previous || next) ? `<nav class="next-record" aria-label="Adjacent records"><div>${previous ? `<a href="${recordHref({...previous, section:record.section})}" data-link><small>Previous</small>← ${escapeHtml(previous.name)}</a>` : ""}</div><div>${next ? `<a href="${recordHref({...next, section:record.section})}" data-link><small>Next</small>${escapeHtml(next.name)} →</a>` : ""}</div></nav>` : ""}
   </article>`;
-  bindLinks(app); bindImageFallbacks(app); focusPage();
+  bindLinks(app); bindImageFallbacks(app); bindMotion(app); focusPage();
 }
 
 function renderNotFound() {
@@ -164,6 +165,66 @@ function bindImageFallbacks(root) {
   }, { once: true }));
 }
 function focusPage() { scrollTo({ top: 0, behavior: "auto" }); app.focus({ preventScroll: true }); }
+
+function createAtmosphere() {
+  const field = byId("embers");
+  if (!field || reducedMotion.matches) return;
+  const colors = ["#ff5363", "#d9344a", "#e5a85d"];
+  for (let i = 0; i < 18; i += 1) {
+    const ember = document.createElement("i");
+    ember.className = "ember";
+    ember.style.cssText = `--x:${(i * 37) % 101}%;--size:${1 + (i % 3)}px;--duration:${12 + (i % 7) * 2}s;--delay:${-i * 1.9}s;--drift:${((i % 5) - 2) * 2.6}rem;--opacity:${.18 + (i % 4) * .09};--ember-color:${colors[i % colors.length]}`;
+    field.appendChild(ember);
+  }
+
+  let pointerFrame = 0;
+  window.addEventListener("pointermove", (event) => {
+    if (pointerFrame) return;
+    pointerFrame = requestAnimationFrame(() => {
+      document.documentElement.style.setProperty("--pointer-x", `${event.clientX}px`);
+      document.documentElement.style.setProperty("--pointer-y", `${event.clientY}px`);
+      pointerFrame = 0;
+    });
+  }, { passive: true });
+}
+
+function bindMotion(root) {
+  if (reducedMotion.matches) return;
+  root.querySelectorAll(".section-tile").forEach((tile) => {
+    tile.addEventListener("pointermove", (event) => {
+      const box = tile.getBoundingClientRect();
+      const x = (event.clientX - box.left) / box.width;
+      const y = (event.clientY - box.top) / box.height;
+      tile.style.setProperty("--card-x", `${x * 100}%`);
+      tile.style.setProperty("--card-y", `${y * 100}%`);
+      tile.style.setProperty("--tilt-x", `${(x - .5) * 3.2}deg`);
+      tile.style.setProperty("--tilt-y", `${(.5 - y) * 3.2}deg`);
+    });
+    tile.addEventListener("pointerleave", () => {
+      tile.style.setProperty("--tilt-x", "0deg");
+      tile.style.setProperty("--tilt-y", "0deg");
+    });
+  });
+}
+
+document.addEventListener("pointerdown", (event) => {
+  if (reducedMotion.matches || event.button !== 0) return;
+  const target = event.target.closest("button, .section-tile, .record-row, .attachment-links a");
+  if (!target) return;
+  target.classList.add("ripple-host");
+  const box = target.getBoundingClientRect();
+  const ripple = document.createElement("span");
+  ripple.className = "click-ripple";
+  ripple.style.left = `${event.clientX - box.left}px`;
+  ripple.style.top = `${event.clientY - box.top}px`;
+  target.appendChild(ripple);
+  ripple.addEventListener("animationend", () => ripple.remove(), { once: true });
+});
+
+window.addEventListener("scroll", () => {
+  const max = document.documentElement.scrollHeight - innerHeight;
+  byId("readingProgress").style.transform = `scaleX(${max > 0 ? scrollY / max : 0})`;
+}, { passive: true });
 
 function markdown(source = "") {
   const lines = source.replace(/\r/g, "").split("\n");
@@ -208,4 +269,5 @@ byId("globalSearch").addEventListener("input", (event) => renderSearch(event.tar
 document.addEventListener("keydown", (event) => { if (event.key === "/" && !event.metaKey && !event.ctrlKey && document.activeElement.tagName !== "INPUT") { event.preventDefault(); openSearch(); } if (event.key === "Escape") closeSearch(); });
 window.addEventListener("popstate", route);
 bindLinks(document);
+createAtmosphere();
 start();
