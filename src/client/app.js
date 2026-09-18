@@ -30,21 +30,70 @@ const LABEL_COLORS = { green: "#5fbf8a", yellow: "#e2c45a", orange: "#f0994a", r
 
 /* ───────── Data + live sync ───────── */
 async function loadBoard() {
-  if (PREVIEW) return { ...PREVIEW.board, preview: true };
+  if (PREVIEW) return prepareBoard({ ...PREVIEW.board, preview: true });
   const response = await fetch("/api/board", { cache: "no-store" });
   if (!response.ok) throw new Error("Board unavailable");
   const board = await response.json();
   if (!board.ok || !Array.isArray(board.lists)) throw new Error("Board unavailable");
-  return board;
+  return prepareBoard(board);
 }
 const signatureOf = (board) => JSON.stringify([board.name, board.description, board.lists]);
+
+/* Trello boards are written by people, not for a website, so a little interpretation
+ * happens here before anything renders:
+ *  - cards named "---" (or similar) are visual dividers on the board and are dropped;
+ *  - a list whose first card has no description is using that card as a heading for
+ *    the list ("Imperial Crimes", "Special Locations"…). It becomes the section's
+ *    tagline (and artwork, if it carries an image) instead of an empty record;
+ *  - names like "A-01 | Trespassing" are split into a code and a title;
+ *  - a leading heading or bold line that just repeats the card's name is removed
+ *    from the description, since the page already shows the title. */
+function prepareBoard(board) {
+  const lists = board.lists.map((list) => {
+    const cards = list.cards
+      .map((card) => ({ ...card, name: cleanText(card.name).replace(/^[•·▪●*-]+\s*/, ""), description: cleanText(card.description) }))
+      .filter((card) => card.name && !/^[-—–_=*.\s]+$/.test(card.name));
+    let tagline = "", art = null;
+    if (cards.length > 1 && !cards[0].description) {
+      const heading = cards.shift();
+      tagline = titleCase(heading.name);
+      art = primaryImage(heading);
+    }
+    return { ...list, name: cleanText(list.name), tagline, art, cards: cards.map(prepareRecord) };
+  });
+  return { ...board, name: cleanText(board.name), description: cleanText(board.description), lists };
+}
+function prepareRecord(card) {
+  const coded = card.name.match(/^([A-Z]{1,3}-\d{1,3})\s*[|:–—-]\s*(.+)$/);
+  const code = coded ? coded[1] : "";
+  const title = coded ? coded[2].trim() : card.name;
+  const description = stripTitleLine(card.description, [card.name, title]);
+  const titleOnly = !description && !(card.attachments || []).length;
+  return { ...card, code, title, description, titleOnly };
+}
+function stripTitleLine(description, titles) {
+  const lines = description.split("\n");
+  const first = lines.findIndex((line) => line.trim());
+  if (first < 0) return "";
+  const heading = lines[first].trim().replace(/^#{1,6}\s*/, "").replace(/^>\s*/, "").replace(/^\*\*(.+)\*\*$/, "$1").replace(/^__(.+)__$/, "$1").trim();
+  const wanted = titles.map(normalise);
+  if (heading && wanted.includes(normalise(heading))) return lines.slice(first + 1).join("\n").trim();
+  return description;
+}
+const normalise = (value = "") => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+function cleanText(value = "") { return String(value).replace(/[\u200b-\u200d\ufeff]/g, "").replace(/\r/g, "").replace(/[ \t]+$/gm, "").trim(); }
+function titleCase(value = "") {
+  if (value !== value.toUpperCase() || !/[A-Z]/.test(value)) return value;
+  const small = new Set(["of", "the", "and", "or", "in", "on", "at", "to", "for", "by", "a", "an"]);
+  return value.toLowerCase().split(" ").map((word, i) => (i && small.has(word) ? word : word.charAt(0).toUpperCase() + word.slice(1))).join(" ");
+}
 
 async function start() {
   try {
     state.board = await loadBoard();
     state.live = !state.board.preview;
   } catch {
-    state.board = fallback;
+    state.board = prepareBoard(fallback);
     state.live = false;
   }
   state.signature = signatureOf(state.board);
@@ -107,6 +156,7 @@ function currentPath() { return PREVIEW ? (location.hash.replace(/^#/, "") || "/
 function sectionHref(section) { return link(`/section/${slug(section.name)}`); }
 function recordHref(record) { return link(`/record/${encodeURIComponent(record.id)}/${slug(record.name)}`); }
 function allRecords() { return state.board.lists.flatMap((section, sectionIndex) => section.cards.map((record, recordIndex) => ({ ...record, section, sectionIndex, recordIndex }))); }
+function searchableRecords() { return allRecords().filter((record) => !record.titleOnly); }
 function imageAttachments(record) { return (record.attachments || []).filter((item) => item.isImage && item.imageUrl); }
 function primaryImage(record) {
   const images = imageAttachments(record);
@@ -124,6 +174,8 @@ function chips(record) {
   if (!labels.length) return "";
   return `<span class="chips">${labels.map((label) => `<span class="chip" style="--chip:${LABEL_COLORS[(label.color || "").split("_")[0]] || "#d4ad68"}">${escapeHtml(label.name)}</span>`).join("")}</span>`;
 }
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+function recordLabel(record) { return record.code ? `<span class="record-code">${escapeHtml(record.code)}</span>${escapeHtml(record.title)}` : escapeHtml(record.title); }
 
 /* A deterministic sigil per section/record, so entries without artwork still have a face. */
 function glyph(seed = "") {
@@ -161,8 +213,10 @@ function route(options = {}) {
     }
     renderNotFound();
   };
-  if (document.startViewTransition && !reducedMotion.matches && !options.instant) document.startViewTransition(render);
-  else render();
+  if (document.startViewTransition && !reducedMotion.matches && !options.instant && !document.hidden) {
+    const transition = document.startViewTransition(render);
+    transition.ready.catch(() => {}); transition.finished.catch(() => {}); // a skipped transition still renders
+  } else render();
 }
 function navigate(href) {
   const path = href.replace(/^#/, "") || "/";
@@ -182,6 +236,7 @@ function renderMenus() {
   byId("sectionsPopover").innerHTML = state.board.lists.map((section, index) => `<a href="${sectionHref(section)}" data-link><em>${roman(index + 1)}</em><span>${escapeHtml(section.name)}</span><small>${section.cards.length}</small></a>`).join("");
 }
 
+const SEARCH_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>`;
 const HERO_SIGIL = `<svg viewBox="-100 -100 200 200" aria-hidden="true">
   <g class="ring r1" stroke-width=".6"><circle r="96"/>${Array.from({ length: 72 }, (_, i) => { const a = (i / 72) * Math.PI * 2, r = i % 6 === 0 ? 86 : 91; return `<path d="M${(Math.cos(a) * r).toFixed(1)},${(Math.sin(a) * r).toFixed(1)} L${(Math.cos(a) * 96).toFixed(1)},${(Math.sin(a) * 96).toFixed(1)}"/>`; }).join("")}</g>
   <g class="ring r2" stroke-width=".7"><circle r="78" stroke-dasharray="2 7"/><circle r="72" stroke-dasharray="40 14 6 14"/><circle class="orb" cx="78" cy="0" r="2.2"/><circle class="orb" cx="-78" cy="0" r="1.4"/></g>
@@ -193,7 +248,7 @@ const HERO_SIGIL = `<svg viewBox="-100 -100 200 200" aria-hidden="true">
 
 function renderHome(options) {
   document.title = `${state.board.name || "TSO"} — Archive`;
-  const records = allRecords();
+  const records = searchableRecords();
   const tickerItems = records.map((record) => `<a href="${recordHref(record)}" data-link tabindex="-1">${escapeHtml(record.name)}</a>`).join("");
   app.innerHTML = `<div class="page">
     <section class="hero">
@@ -201,15 +256,12 @@ function renderHome(options) {
         <div class="eyebrow">The Sith Order</div>
         <h1 class="hero-title"><span>Doctrine</span><span>Archive</span></h1>
         <p class="hero-lead">${escapeHtml(state.board.description || "The central record of the Order: doctrine, authority, training and law.")}</p>
-        <div class="hero-actions">
-          <button class="btn btn-primary" data-open-search>Search the archive <kbd>/</kbd></button>
-          <a class="btn" href="#sections" data-scroll>Browse sections ↓</a>
-        </div>
-        <ul class="hero-stats">
-          <li><b data-count="${state.board.lists.length}">${state.board.lists.length}</b><span>Sections</span></li>
-          <li><b data-count="${records.length}">${records.length}</b><span>Records</span></li>
-          <li><b data-count="${records.filter((record) => primaryImage(record)).length}">${records.filter((record) => primaryImage(record)).length}</b><span>Illustrated</span></li>
-        </ul>
+        <form class="hero-search" role="search" id="heroSearch">
+          ${SEARCH_ICON}
+          <input type="search" placeholder="Search rules, offences, locations…" autocomplete="off" aria-label="Search the archive" />
+          <kbd aria-hidden="true">/</kbd>
+        </form>
+        <div class="hero-actions"><a class="btn" href="#sections" data-scroll>Browse the sections <span aria-hidden="true">↓</span></a></div>
       </div>
       <div class="hero-sigil" id="heroSigil">${HERO_SIGIL}</div>
     </section>
@@ -218,29 +270,34 @@ function renderHome(options) {
     <section class="section-index" aria-label="Doctrine sections">
       ${state.board.lists.map((section, index) => `<a class="holo" href="${sectionHref(section)}" data-link data-reveal style="--d:${Math.min(index * 70, 420)}ms">
         ${glyph(section.id + section.name)}
-        <div class="holo-top"><span>Section ${roman(index + 1)}</span><span>${section.cards.length} ${section.cards.length === 1 ? "record" : "records"}</span></div>
+        <div class="holo-top"><span>Section ${roman(index + 1)}</span><span>${plural(section.cards.length, "record")}</span></div>
         <h2>${escapeHtml(section.name)}</h2>
-        ${section.cards.length ? `<ul>${section.cards.slice(0, 3).map((record) => `<li>${escapeHtml(record.name)}</li>`).join("")}</ul>` : `<ul><li>Awaiting records</li></ul>`}
+        ${section.tagline ? `<p class="holo-tagline">${escapeHtml(section.tagline)}</p>` : ""}
+        ${section.cards.length ? `<ul>${section.cards.slice(0, 3).map((record) => `<li>${recordLabel(record)}</li>`).join("")}</ul>` : `<ul><li>Awaiting records</li></ul>`}
         <span class="holo-arrow" aria-hidden="true">→</span>
       </a>`).join("")}
     </section>
   </div>`;
+  const search = byId("heroSearch");
+  search.addEventListener("submit", (event) => { event.preventDefault(); openSearch(search.querySelector("input").value); });
+  search.querySelector("input").addEventListener("focus", () => openSearch(search.querySelector("input").value));
   afterRender(options);
-  if (!options?.preserveScroll) countUp(app);
 }
 
 function renderSection(section, options) {
   document.title = `${section.name} — TSO Doctrine`;
   const index = state.board.lists.indexOf(section);
+  const filterable = section.cards.filter((record) => !record.titleOnly).length > 3;
   app.innerHTML = `<div class="page">
     <nav class="breadcrumb" aria-label="Breadcrumb"><a href="${link("/")}" data-link>Archive</a><span aria-hidden="true">◆</span><span>${escapeHtml(section.name)}</span></nav>
-    <header class="section-header">
-      ${glyph(section.id + section.name)}
+    <header class="section-header${section.art ? " has-art" : ""}">
+      ${section.art ? `<img class="section-art" src="${escapeAttr(section.art.imageUrl)}" alt="" />` : glyph(section.id + section.name)}
       <div class="eyebrow">Section ${roman(index + 1)}</div>
       <h1>${escapeHtml(section.name)}</h1>
+      ${section.tagline ? `<p class="section-tagline">${escapeHtml(section.tagline)}</p>` : ""}
       <div class="section-tools">
-        <span id="sectionCount">${section.cards.length} ${section.cards.length === 1 ? "record" : "records"} on file</span>
-        ${section.cards.length > 3 ? `<label class="filter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="sectionFilter" type="search" placeholder="Filter this section…" autocomplete="off" aria-label="Filter records in this section" /></label>` : ""}
+        <span id="sectionCount">${plural(section.cards.length, "record")} on file</span>
+        ${filterable ? `<label class="filter">${SEARCH_ICON}<input id="sectionFilter" type="search" placeholder="Filter this section…" autocomplete="off" aria-label="Filter records in this section" /></label>` : ""}
       </div>
     </header>
     <section class="record-list" id="recordList" aria-label="Records in ${escapeAttr(section.name)}">
@@ -252,16 +309,23 @@ function renderSection(section, options) {
     const value = event.target.value.trim().toLowerCase(); let shown = 0;
     app.querySelectorAll(".record-row").forEach((row) => { const hit = !value || row.dataset.text.includes(value); row.hidden = !hit; if (hit) shown += 1; });
     byId("noMatch").hidden = shown > 0;
-    byId("sectionCount").textContent = value ? `${shown} of ${section.cards.length} records` : `${section.cards.length} records on file`;
+    byId("sectionCount").textContent = value ? `${shown} of ${plural(section.cards.length, "record")}` : `${plural(section.cards.length, "record")} on file`;
   });
   afterRender(options);
 }
 
 function recordRow(record, index = 0) {
   const image = primaryImage(record);
-  return `<a class="record-row" href="${recordHref(record)}" data-link data-reveal data-seed="${escapeAttr(record.id)}" data-text="${escapeAttr(`${record.name} ${stripMarkdown(record.description)}`.toLowerCase())}" style="--d:${Math.min(index * 50, 300)}ms">
-    <span class="record-num">${pad(index + 1)}</span>
-    <div><h2>${escapeHtml(record.name)}</h2><p>${escapeHtml(excerpt(record.description))}</p>${chips(record)}</div>
+  const text = escapeAttr(`${record.name} ${stripMarkdown(record.description)}`.toLowerCase());
+  const number = record.code ? `<span class="record-num is-code">${escapeHtml(record.code)}</span>` : `<span class="record-num">${pad(index + 1)}</span>`;
+  if (record.titleOnly) {
+    return `<div class="record-row is-static" data-reveal data-text="${text}" style="--d:${Math.min(index * 50, 300)}ms">
+      ${number}<div><h2>${escapeHtml(record.title)}</h2>${chips(record)}</div>
+    </div>`;
+  }
+  return `<a class="record-row" href="${recordHref(record)}" data-link data-reveal data-seed="${escapeAttr(record.id)}" data-text="${text}" style="--d:${Math.min(index * 50, 300)}ms">
+    ${number}
+    <div><h2>${escapeHtml(record.title)}</h2><p>${escapeHtml(excerpt(record))}</p>${chips(record)}</div>
     ${image ? `<div class="record-image"><img src="${escapeAttr(image.imageUrl)}" alt="${escapeAttr(image.name || record.name)}" loading="lazy" /></div>` : `<div class="record-image is-glyph">${glyph(record.id)}</div>`}
     <span class="record-arrow" aria-hidden="true">→</span>
   </a>`;
@@ -271,33 +335,44 @@ function renderRecord(record, options) {
   document.title = `${record.name} — TSO Doctrine`;
   const images = imageAttachments(record);
   const hero = primaryImage(record);
-  const gallery = images.filter((image) => image.id !== hero?.id);
   const documents = (record.attachments || []).filter((item) => !item.isImage);
   const siblings = record.section.cards;
   const current = siblings.findIndex((item) => item.id === record.id);
   const previous = current > 0 ? siblings[current - 1] : null;
   const next = current < siblings.length - 1 ? siblings[current + 1] : null;
   const headings = extractHeadings(record.description);
-  const figure = (image, lazy) => `<figure><button data-zoom="${escapeAttr(image.imageUrl)}" data-caption="${escapeAttr(image.name || record.name)}" aria-label="Enlarge image"><img src="${escapeAttr(image.imageUrl)}" alt="${escapeAttr(image.name || record.name)}" ${lazy ? 'loading="lazy"' : ""} /></button><figcaption>${escapeHtml(image.name || "Archive image")}</figcaption></figure>`;
+  const figure = (image, lazy) => `<figure><button data-zoom="${escapeAttr(image.imageUrl)}" data-caption="${escapeAttr(captionOf(image, record))}" aria-label="Enlarge image"><img src="${escapeAttr(image.imageUrl)}" alt="${escapeAttr(captionOf(image, record))}" ${lazy ? 'loading="lazy"' : ""} /></button><figcaption>${escapeHtml(captionOf(image, record))}</figcaption></figure>`;
+
+  // Images referenced inline in the description are rendered where they appear; anything
+  // left over (plus the cover, if it was not referenced inline) is shown as the gallery.
+  const inlineIds = new Set();
+  const body = record.description ? markdown(record.description, { record, shown: inlineIds, hero }) : "";
+  const gallery = images.filter((image) => image.id !== hero?.id && !inlineIds.has(image.id));
+  const contents = headings.length > 1;
+  const meta = [record.code ? `Offense ${record.code}` : `Record ${pad(current + 1)} of ${pad(siblings.length)}`, record.description ? `${readingTime(record.description)} min read` : ""].filter(Boolean);
 
   app.innerHTML = `<article class="page article-page">
-    <nav class="breadcrumb" aria-label="Breadcrumb"><a href="${link("/")}" data-link>Archive</a><span aria-hidden="true">◆</span><a href="${sectionHref(record.section)}" data-link>${escapeHtml(record.section.name)}</a><span aria-hidden="true">◆</span><span>${escapeHtml(record.name)}</span></nav>
+    <nav class="breadcrumb" aria-label="Breadcrumb"><a href="${link("/")}" data-link>Archive</a><span aria-hidden="true">◆</span><a href="${sectionHref(record.section)}" data-link>${escapeHtml(record.section.name)}</a><span aria-hidden="true">◆</span><span>${escapeHtml(record.title)}</span></nav>
     <header class="article-header">
       <div class="eyebrow">${escapeHtml(record.section.name)}</div>
-      <h1>${escapeHtml(record.name)}</h1>
-      <div class="article-meta"><span>Record ${pad(current + 1)} of ${pad(siblings.length)}</span><span>${readingTime(record.description)} min read</span>${chips(record)}</div>
+      <h1>${escapeHtml(record.title)}</h1>
+      <div class="article-meta">${meta.map((item) => `<span>${item}</span>`).join("")}${chips(record)}</div>
     </header>
     ${hero ? `<div class="hero-media">${figure(hero, false)}</div>` : ""}
-    <div class="article-layout">
-      <div class="prose">${markdown(record.description)}</div>
-      <aside class="article-aside" aria-label="In this record"><strong>In this record</strong>${headings.length ? headings.map((heading) => `<a href="#${heading.id}" data-scroll class="${heading.level === 3 ? "sub" : ""}">${escapeHtml(heading.text)}</a>`).join("") : `<a href="${sectionHref(record.section)}" data-link>← Back to section</a>`}</aside>
+    <div class="article-layout${contents ? " has-contents" : ""}">
+      <div class="prose">${body || `<p class="notice">${images.length ? "This record is illustrated only; no written doctrine has been filed with it." : "No written doctrine has been filed under this entry yet."}</p>`}</div>
+      ${contents ? `<aside class="article-aside" aria-label="In this record"><strong>In this record</strong>${headings.map((heading) => `<a href="#${heading.id}" data-scroll class="${heading.level === 3 ? "sub" : ""}">${escapeHtml(heading.text)}</a>`).join("")}</aside>` : ""}
     </div>
     ${gallery.length ? `<div class="rule"><i></i>Archive imagery<i></i></div><section class="gallery" aria-label="Record images">${gallery.map((image) => figure(image, true)).join("")}</section>` : ""}
     ${documents.length || record.url ? `<div class="rule"><i></i>References<i></i></div><section class="attachments"><div class="attachment-links">${documents.map((item) => `<a href="${safeUrl(item.url)}" target="_blank" rel="noopener">${escapeHtml(item.name || "Attachment")} ↗</a>`).join("")}${record.url ? `<a href="${safeUrl(record.url)}" target="_blank" rel="noopener">View source card ↗</a>` : ""}</div></section>` : ""}
-    ${(previous || next) ? `<nav class="next-record" aria-label="Adjacent records">${previous ? `<a href="${recordHref(previous)}" data-link><small>← Previous record</small>${escapeHtml(previous.name)}</a>` : ""}${next ? `<a class="next" href="${recordHref(next)}" data-link><small>Next record →</small>${escapeHtml(next.name)}</a>` : ""}</nav>` : ""}
+    ${(previous || next) ? `<nav class="next-record" aria-label="Adjacent records">${previous ? `<a href="${recordHref(previous)}" data-link><small>← Previous</small><span>${recordLabel(previous)}</span></a>` : ""}${next ? `<a class="next" href="${recordHref(next)}" data-link><small>Next →</small><span>${recordLabel(next)}</span></a>` : ""}</nav>` : ""}
   </article>`;
   afterRender(options);
-  spyHeadings();
+  if (contents) spyHeadings();
+}
+function captionOf(image, record) {
+  const name = (image.name || "").replace(/\.(png|jpe?g|gif|webp|avif)$/i, "");
+  return /^(image|img|screenshot|untitled|unnamed)?[\s_-]*\d*$/i.test(name) ? record.title : name;
 }
 
 function renderNotFound() {
@@ -307,8 +382,20 @@ function renderNotFound() {
 }
 
 /* ───────── Search ───────── */
-function openSearch() { closeMenus(); byId("searchPanel").hidden = false; document.body.style.overflow = "hidden"; byId("globalSearch").focus(); renderSearch(byId("globalSearch").value); }
-function closeSearch() { if (byId("searchPanel").hidden) return; byId("searchPanel").hidden = true; document.body.style.overflow = ""; byId("globalSearch").value = ""; }
+function openSearch(prefill) {
+  closeMenus();
+  const input = byId("globalSearch");
+  if (typeof prefill === "string") input.value = prefill;
+  byId("searchPanel").hidden = false; document.body.style.overflow = "hidden";
+  input.focus(); input.setSelectionRange(input.value.length, input.value.length);
+  renderSearch(input.value);
+}
+function closeSearch() {
+  if (byId("searchPanel").hidden) return;
+  byId("searchPanel").hidden = true; document.body.style.overflow = ""; byId("globalSearch").value = "";
+  const hero = byId("heroSearch")?.querySelector("input");
+  if (hero) { hero.value = ""; hero.blur(); }
+}
 function highlight(text, query) {
   if (!query) return escapeHtml(text);
   const at = text.toLowerCase().indexOf(query);
@@ -316,22 +403,22 @@ function highlight(text, query) {
   return `${escapeHtml(text.slice(0, at))}<mark>${escapeHtml(text.slice(at, at + query.length))}</mark>${escapeHtml(text.slice(at + query.length))}`;
 }
 function snippet(record, query) {
-  const text = stripMarkdown(record.description.replace(/^\s*#{1,6}\s+/gm, ""));
+  const text = stripMarkdown(record.description.replace(/^\s*#{1,6}\s+.*$/gm, ""));
   if (!text) return "";
   const at = query ? text.toLowerCase().indexOf(query) : -1;
-  const from = at > 40 ? at - 40 : 0;
-  return `${from ? "…" : ""}${text.slice(from, from + 120)}`;
+  const from = at > 40 ? text.lastIndexOf(" ", at - 40) + 1 : 0;
+  return `${from ? "…" : ""}${text.slice(from, from + 140)}`;
 }
 function renderSearch(query) {
   const value = query.trim().toLowerCase();
-  const records = allRecords();
+  const records = searchableRecords();
   const rank = (record) => (record.name.toLowerCase().includes(value) ? 0 : record.section.name.toLowerCase().includes(value) ? 1 : 2);
   const matches = records.filter((record) => !value || `${record.name} ${record.description} ${record.section.name}`.toLowerCase().includes(value)).sort((a, b) => (value ? rank(a) - rank(b) : 0)).slice(0, 30);
   state.searchMatches = matches; state.searchIndex = 0;
-  byId("searchCount").textContent = value ? `${matches.length} ${matches.length === 1 ? "match" : "matches"}` : `${records.length} records`;
+  byId("searchCount").textContent = value ? `${matches.length} ${matches.length === 1 ? "match" : "matches"}` : plural(records.length, "record");
   byId("searchResults").innerHTML = matches.length ? matches.map((record, index) => {
     const image = primaryImage(record);
-    return `<a class="search-result${index === 0 ? " active" : ""}" href="${recordHref(record)}" data-link data-index="${index}"><span class="search-thumb">${image ? `<img src="${escapeAttr(image.imageUrl)}" alt="" loading="lazy" />` : glyph(record.id)}</span><span><small>${escapeHtml(record.section.name)}</small><strong>${highlight(record.name, value)}</strong><p>${highlight(snippet(record, value), value)}</p></span><b aria-hidden="true">→</b></a>`;
+    return `<a class="search-result${index === 0 ? " active" : ""}" href="${recordHref(record)}" data-link data-index="${index}"><span class="search-thumb">${image ? `<img src="${escapeAttr(image.imageUrl)}" alt="" loading="lazy" />` : glyph(record.id)}</span><span><small>${escapeHtml(record.section.name)}${record.code ? ` · ${escapeHtml(record.code)}` : ""}</small><strong>${highlight(record.title, value)}</strong><p>${highlight(snippet(record, value), value)}</p></span><b aria-hidden="true">→</b></a>`;
   }).join("") : `<div class="search-empty">No records match “${escapeHtml(query)}”.</div>`;
   bindImageFallbacks(byId("searchResults"));
 }
@@ -387,6 +474,8 @@ function observeReveals(root) {
   revealObserver?.disconnect();
   revealObserver = new IntersectionObserver((entries) => entries.forEach((entry) => { if (entry.isIntersecting) { entry.target.classList.add("in"); revealObserver.unobserve(entry.target); } }), { rootMargin: "0px 0px -6% 0px" });
   items.forEach((item) => revealObserver.observe(item));
+  clearTimeout(observeReveals.timer);
+  observeReveals.timer = setTimeout(() => items.forEach((item) => item.classList.add("in")), 1500); // never leave content hidden
 }
 
 let headingObserver = null;
@@ -398,15 +487,6 @@ function spyHeadings() {
   links[0].classList.add("active");
   headingObserver = new IntersectionObserver((entries) => entries.forEach((entry) => { if (entry.isIntersecting) activate(entry.target.id); }), { rootMargin: "-15% 0px -70% 0px" });
   app.querySelectorAll(".prose h2[id], .prose h3[id]").forEach((heading) => headingObserver.observe(heading));
-}
-
-function countUp(root) {
-  if (reducedMotion.matches) return;
-  root.querySelectorAll("[data-count]").forEach((node) => {
-    const target = Number(node.dataset.count); const began = performance.now(); const duration = 1100;
-    const tick = (now) => { const t = Math.min(1, (now - began) / duration); node.textContent = Math.round(target * (1 - Math.pow(1 - t, 3))); if (t < 1) requestAnimationFrame(tick); };
-    requestAnimationFrame(tick);
-  });
 }
 
 function bindMotion(root) {
@@ -469,7 +549,7 @@ function createAtmosphere() {
 
 document.addEventListener("pointerdown", (event) => {
   if (reducedMotion.matches || event.button !== 0) return;
-  const target = event.target.closest(".btn, .search-trigger, .holo, .record-row, .attachment-links a, .next-record a");
+  const target = event.target.closest(".btn, .search-trigger, .holo, a.record-row, .attachment-links a, .next-record a");
   if (!target) return;
   target.classList.add("ripple-host");
   const box = target.getBoundingClientRect();
@@ -487,38 +567,106 @@ function updateProgress() {
 }
 window.addEventListener("scroll", updateProgress, { passive: true });
 
-/* ───────── Markdown ───────── */
-function markdown(source = "") {
-  const lines = source.replace(/\r/g, "").split("\n");
-  const out = []; let list = null;
+/* ───────── Markdown ─────────
+ * A small renderer for the flavour of Markdown Trello produces. It understands
+ * headings, paragraphs (single newlines become line breaks, as on Trello), bullet and
+ * numbered lists, multi-line blockquotes (a bare ">" is a paragraph break inside the
+ * quote), horizontal rules, inline images and links, bold, italic and code.
+ * A line that is nothing but a code span is treated as a worked example. */
+const IMAGE_LINE = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/;
+function markdown(source = "", context = {}) {
+  const lines = cleanText(source).split("\n");
+  const out = [];
+  let list = null, paragraph = [], quote = null;
   const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    if (paragraph.length === 1 && /^`[^`]+`$/.test(paragraph[0])) out.push(`<p class="example">${inline(paragraph[0].slice(1, -1))}</p>`);
+    else out.push(`<p>${paragraph.map(inline).join("<br>")}</p>`);
+    paragraph = [];
+  };
+  const flushQuote = () => { if (quote) { out.push(`<blockquote>${markdown(quote.join("\n"), context)}</blockquote>`); quote = null; } };
+  const flushAll = () => { flushParagraph(); closeList(); flushQuote(); };
   for (const raw of lines) {
     const line = raw.trim();
-    if (!line) { closeList(); continue; }
-    if (/^---+$/.test(line)) { closeList(); out.push("<hr>"); continue; }
-    const heading = line.match(/^(#{2,3})\s+(.+)$/);
-    if (heading) { closeList(); const level = heading[1].length; const text = stripMarkdown(heading[2]); out.push(`<h${level} id="${slug(text)}">${inline(heading[2])}</h${level}>`); continue; }
-    const bullet = line.match(/^[-*]\s+(.+)$/);
-    if (bullet) { if (list !== "ul") { closeList(); list = "ul"; out.push("<ul>"); } out.push(`<li>${inline(bullet[1])}</li>`); continue; }
+    const quoted = line.match(/^>\s?(.*)$/);
+    if (quoted) { flushParagraph(); closeList(); (quote ||= []).push(quoted[1]); continue; }
+    if (quote) flushQuote();
+    if (!line) { flushParagraph(); closeList(); continue; }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)) { flushAll(); out.push("<hr>"); continue; }
+    const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*$/);
+    if (heading) { flushAll(); const level = Math.min(3, Math.max(2, heading[1].length)); const text = stripMarkdown(heading[2]); out.push(`<h${level} id="${slug(text)}">${inline(heading[2])}</h${level}>`); continue; }
+    const image = line.match(IMAGE_LINE);
+    if (image) { flushAll(); const html = figureFor(image[2], image[1], context); if (html) out.push(html); continue; }
+    const bullet = line.match(/^[-*+]\s+(.+)$/);
+    if (bullet) { flushParagraph(); flushQuote(); if (list !== "ul") { closeList(); list = "ul"; out.push("<ul>"); } out.push(`<li>${inline(bullet[1])}</li>`); continue; }
     const number = line.match(/^\d+[.)]\s+(.+)$/);
-    if (number) { if (list !== "ol") { closeList(); list = "ol"; out.push("<ol>"); } out.push(`<li>${inline(number[1])}</li>`); continue; }
-    if (line.startsWith("> ")) { closeList(); out.push(`<blockquote>${inline(line.slice(2))}</blockquote>`); continue; }
-    closeList(); out.push(`<p>${inline(line)}</p>`);
+    if (number) { flushParagraph(); flushQuote(); if (list !== "ol") { closeList(); list = "ol"; out.push("<ol>"); } out.push(`<li>${inline(number[1])}</li>`); continue; }
+    closeList(); paragraph.push(line);
   }
-  closeList();
-  return out.join("") || "<p>No additional doctrine has been recorded for this entry.</p>";
+  flushAll();
+  return out.join("");
+}
+/* Trello attachment URLs need a login, so an inline image is only rendered when it maps
+ * to an attachment the Worker can proxy. The cover image is already shown above the text. */
+function figureFor(url, alt, context) {
+  const attachment = (context.record?.attachments || []).find((item) => item.isImage && (url.includes(item.id) || url === item.url));
+  if (!attachment) return "";
+  if (context.hero && attachment.id === context.hero.id) return "";
+  context.shown?.add(attachment.id);
+  const caption = alt && !/^(image|img|screenshot)?[\s_-]*\d*(\.\w+)?$/i.test(alt) ? alt : captionOf(attachment, context.record || {});
+  return `<figure><button data-zoom="${escapeAttr(attachment.imageUrl)}" data-caption="${escapeAttr(caption)}" aria-label="Enlarge image"><img src="${escapeAttr(attachment.imageUrl)}" alt="${escapeAttr(caption)}" loading="lazy" /></button>${caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : ""}</figure>`;
 }
 function inline(value = "") {
-  let text = escapeHtml(value);
-  text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-  text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  text = text.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  text = text.replace(/`([^`]+)`/g, "<code>$1</code>");
-  return text;
+  const tokens = [];
+  const keep = (html) => { tokens.push(html); return `\u0000${tokens.length - 1}\u0000`; };
+  let text = value;
+  text = text.replace(/`([^`]+)`/g, (_, code) => keep(`<code>${escapeHtml(code)}</code>`));
+  text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_, alt) => alt || "");
+  text = text.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_, label, url) => keep(anchor(url, label)));
+  text = text.replace(/(^|[\s(])((?:https?:\/\/)[^\s<>)]+)/g, (_, lead, url) => `${lead}${keep(anchor(url, url))}`);
+  text = escapeHtml(text);
+  text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/__(.+?)__/g, "<strong>$1</strong>");
+  text = text.replace(/(^|[^\w*])\*(?!\s)([^*]+?)\*(?!\w)/g, "$1<em>$2</em>").replace(/(^|[^\w_])_(?!\s)([^_]+?)_(?!\w)/g, "$1<em>$2</em>");
+  text = text.replace(/~~(.+?)~~/g, "<s>$1</s>");
+  return text.replace(/\u0000(\d+)\u0000/g, (_, index) => tokens[Number(index)]);
 }
-function extractHeadings(source = "") { return source.split(/\r?\n/).map((line) => line.trim().match(/^(#{2,3})\s+(.+)$/)).filter(Boolean).map((match) => ({ level: match[1].length, text: stripMarkdown(match[2]), id: slug(stripMarkdown(match[2])) })); }
-function excerpt(source = "") { const text = stripMarkdown(source.replace(/^\s*#{1,6}\s.*$/gm, "")).replace(/\s+/g, " ").trim(); return text.length > 180 ? `${text.slice(0,177)}…` : text || "Open this doctrine record."; }
-function stripMarkdown(value = "") { return value.replace(/^#{1,6}\s+/gm, "").replace(/[>*_`\[\]()#-]/g, " ").replace(/\s+/g, " ").trim(); }
+function anchor(url, label) {
+  const href = safeUrl(url);
+  if (href === "#") return escapeHtml(label);
+  const bare = label.trim() === url.trim();
+  let text = label;
+  if (bare) { try { const parsed = new URL(url); text = parsed.hostname.replace(/^www\./, "") + (parsed.pathname.length > 1 ? parsed.pathname.replace(/\/+$/, "").split("/").slice(0, 3).join("/") + (parsed.pathname.split("/").length > 4 ? "/…" : "") : ""); } catch { text = url; } }
+  return `<a href="${href}" target="_blank" rel="noopener"${bare ? ' class="bare-link"' : ""}>${escapeHtml(text)}${bare ? " ↗" : ""}</a>`;
+}
+function extractHeadings(source = "") {
+  return cleanText(source).split("\n").map((line) => line.trim().match(/^(#{1,6})\s+(.+?)\s*#*$/)).filter(Boolean).map((match) => {
+    const text = stripMarkdown(match[2]);
+    return { level: Math.min(3, Math.max(2, match[1].length)), text, id: slug(text) };
+  });
+}
+function excerpt(record) {
+  const text = stripMarkdown(record.description.replace(/^\s*#{1,6}\s.*$/gm, ""));
+  if (text) return text.length > 180 ? `${text.slice(0, 177).replace(/\s+\S*$/, "")}…` : text;
+  const images = imageAttachments(record).length;
+  return images ? `Illustrated record · ${plural(images, "image")}` : "Open this record.";
+}
+function stripMarkdown(value = "") {
+  return cleanText(value)
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s*>\s?/gm, "")
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gm, "")
+    .replace(/^(?:-{3,}|\*{3,}|_{3,})$/gm, "")
+    .replace(/(\*\*|__)(.+?)\1/g, "$2")
+    .replace(/(^|[^\w*])\*([^*]+?)\*/g, "$1$2")
+    .replace(/(^|[^\w_])_([^_]+?)_(?!\w)/g, "$1$2")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/~~(.+?)~~/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 function escapeHtml(value = "") { return String(value).replace(/[&<>'"]/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;" }[char])); }
 function escapeAttr(value = "") { return escapeHtml(value); }
 function safeUrl(value = "") { try { const url = new URL(value); return ["http:","https:"].includes(url.protocol) ? escapeAttr(url.href) : "#"; } catch { return "#"; } }
@@ -526,7 +674,7 @@ function safeUrl(value = "") { try { const url = new URL(value); return ["http:"
 /* ───────── Boot ───────── */
 byId("menuToggle").addEventListener("click", () => { const open = byId("mainNav").classList.toggle("open"); byId("menuToggle").setAttribute("aria-expanded", String(open)); });
 byId("sectionsButton").addEventListener("click", () => { const open = byId("sectionsPopover").classList.toggle("open"); byId("sectionsButton").setAttribute("aria-expanded", String(open)); });
-byId("searchTrigger").addEventListener("click", openSearch);
+byId("searchTrigger").addEventListener("click", () => openSearch());
 byId("closeSearch").addEventListener("click", closeSearch);
 byId("globalSearch").addEventListener("input", (event) => renderSearch(event.target.value));
 byId("globalSearch").addEventListener("keydown", (event) => {
