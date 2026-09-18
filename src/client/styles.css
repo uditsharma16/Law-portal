@@ -114,6 +114,7 @@ kbd { border: 1px solid #40373a; border-radius: 2px; padding: 0 .3rem; color: va
 .search-empty { color: var(--muted); padding: 2rem 0; }
 
 #app { min-height: calc(100vh - 10rem); }
+#app:focus { outline: none; }
 .page { animation: page-arrive .58s cubic-bezier(.2,.8,.2,1) both; }
 .page { width: min(76rem, calc(100% - 2.5rem)); margin: 0 auto; padding: clamp(3rem, 7vw, 6.5rem) 0 7rem; }
 .eyebrow { display: flex; align-items: center; gap: .7rem; color: var(--gold); font-size: .72rem; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
