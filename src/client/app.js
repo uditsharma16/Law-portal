@@ -655,8 +655,7 @@ function renderCalcPanel() {
       <div class="calc-droid-stage">
         <div class="calc-droid" id="calcDroid" data-tier="${v.tier}">
           <div class="calc-droid-glow"></div>
-          <img src="/assets/inquisitor-droid.webp" alt="An Inquisition arrest droid" />
-          <i class="droid-eye e1"></i><i class="droid-eye e2"></i><i class="droid-eye e3"></i>
+          <img src="/assets/inquisitor-droid-red-transparent.webp" alt="An Inquisition arrest droid" />
           <i class="droid-scan" aria-hidden="true"></i>
         </div>
       </div>

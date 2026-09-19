@@ -397,19 +397,14 @@ figcaption { margin-top: .6rem; color: var(--faint); font: 400 .66rem var(--mono
 .calc-droid-wrap[data-tier="severe"] { --droid-speed: 3.7s; --droid-alert: 255, 70, 90; }
 .calc-droid-wrap[data-tier^="ban"] { --droid-speed: 2.8s; --droid-alert: 255, 43, 68; }
 .calc-droid-stage { position: relative; display: grid; place-items: end center; width: 100%; min-height: 9.4rem; isolation: isolate; animation: droid-arrive .55s var(--ease) both; }
-.calc-droid { position: relative; z-index: 2; width: min(4.6rem, 30%); aspect-ratio: 306 / 585; transform-origin: 50% 96%; transform: perspective(60rem) rotateY(var(--dx, 0deg)) rotateX(var(--dy, 0deg)); transition: filter .4s ease; animation: droid-idle var(--droid-speed) ease-in-out infinite; will-change: transform; }
+.calc-droid { position: relative; z-index: 2; width: min(4.8rem, 31%); aspect-ratio: 376 / 666; transform-origin: 50% 96%; transform: perspective(60rem) rotateY(var(--dx, 0deg)) rotateX(var(--dy, 0deg)); transition: filter .4s ease; animation: droid-idle var(--droid-speed) ease-in-out infinite; will-change: transform; }
 .calc-droid img { position: relative; z-index: 1; display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 .85rem 1.4rem rgba(0,0,0,.62)); }
 .calc-droid-glow { position: absolute; z-index: 0; inset: 3% 5% auto 5%; height: 52%; border-radius: 50%; background: radial-gradient(circle, rgba(var(--droid-alert),.34), transparent 70%); filter: blur(1.1rem); animation: droid-pulse calc(var(--droid-speed) * .72) ease-in-out infinite; }
-.droid-scan { position: absolute; z-index: 2; inset: 0; pointer-events: none; background: linear-gradient(180deg, transparent 0 42%, rgba(255,255,255,.18) 49%, transparent 57%); -webkit-mask: url('/assets/inquisitor-droid.webp') center / contain no-repeat; mask: url('/assets/inquisitor-droid.webp') center / contain no-repeat; transform: translateY(-55%); opacity: 0; animation: droid-scan 6.8s ease-in-out infinite; }
-.droid-eye { position: absolute; z-index: 2; width: 4%; aspect-ratio: 1; border-radius: 50%; background: var(--kyber); box-shadow: 0 0 .5rem .12rem var(--red-light); transform: translate(-50%, -50%); animation: droid-blink 2.6s ease-in-out infinite; }
-.droid-eye.e1 { left: 35.3%; top: 5.5%; animation-delay: .1s; }
-.droid-eye.e2 { left: 39.9%; top: 3.4%; animation-delay: .4s; }
-.droid-eye.e3 { left: 44.8%; top: 5.3%; animation-delay: .7s; }
+.droid-scan { position: absolute; z-index: 2; inset: 0; pointer-events: none; background: linear-gradient(180deg, transparent 0 42%, rgba(255,255,255,.18) 49%, transparent 57%); -webkit-mask: url('/assets/inquisitor-droid-red-transparent.webp') center / contain no-repeat; mask: url('/assets/inquisitor-droid-red-transparent.webp') center / contain no-repeat; transform: translateY(-55%); opacity: 0; animation: droid-scan 6.8s ease-in-out infinite; }
 .calc-droid-status { display: flex; align-items: center; gap: .42rem; color: var(--faint); font: 600 .56rem/1 var(--mono); letter-spacing: .17em; text-transform: uppercase; }
 .calc-droid-status i { width: .36rem; aspect-ratio: 1; border-radius: 50%; background: rgb(var(--droid-alert)); box-shadow: 0 0 .55rem rgba(var(--droid-alert),.9); animation: droid-status 1.8s ease-in-out infinite; }
 .calc-droid-line { margin: .08rem 0 0; max-width: 18rem; min-height: 2.4em; text-align: center; color: var(--gold-light); font: 500 .78rem/1.4 var(--mono); letter-spacing: .01em; transition: color .3s ease; animation: droid-line-in .45s var(--ease) both; }
 .calc-droid-stage:hover .calc-droid { filter: brightness(1.08); }
-.calc-droid-stage:hover .droid-eye { background: #fff; box-shadow: 0 0 .7rem .18rem var(--red-light); }
 
 .calc-banner { position: relative; padding: 1.1rem 1.3rem; border: 1px solid var(--soft-line); background: var(--panel); transition: border-color .4s ease, box-shadow .4s ease; }
 .calc-banner-label { display: block; margin-bottom: .5rem; color: var(--gold); font: 600 .66rem var(--mono); letter-spacing: .2em; text-transform: uppercase; transition: color .3s ease; }
@@ -449,7 +444,6 @@ figcaption { margin-top: .6rem; color: var(--faint); font: 400 .66rem var(--mono
   76% { transform: perspective(60rem) rotateY(var(--dx, 0deg)) rotateX(var(--dy, 0deg)) translateY(-.28rem) rotate(.9deg) scaleY(.996); }
 }
 @keyframes droid-pulse { 0%, 100% { opacity: .45; transform: scale(1); } 50% { opacity: .7; transform: scale(1.04); } }
-@keyframes droid-blink { 0%, 100% { opacity: .5; transform: translate(-50%, -50%) scale(.85); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); } }
 @keyframes droid-arrive { from { opacity: 0; transform: translateY(.55rem); filter: blur(5px); } }
 @keyframes droid-scan { 0%, 60% { opacity: 0; transform: translateY(-55%); } 68% { opacity: .65; } 84% { opacity: .38; transform: translateY(58%); } 100% { opacity: 0; transform: translateY(58%); } }
 @keyframes droid-status { 50% { opacity: .35; transform: scale(.7); } }
