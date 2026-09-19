@@ -102,10 +102,6 @@ html.board-open, html.board-open body { overflow: hidden; }
 .sections-popover a:hover { background: rgba(212,59,72,.1); border-color: var(--red-light); color: #fff; padding-left: 1.05rem; }
 .sections-popover a em { font: 500 .66rem var(--mono); color: var(--red-light); font-style: normal; letter-spacing: .08em; }
 .sections-popover small { color: var(--faint); font: 400 .7rem var(--mono); }
-.mode-toggle { display: flex; align-items: center; gap: .5rem; border: 1px solid var(--soft-line); background: none; padding: .5rem .7rem; border-radius: 3px; color: #c8bdc0; font: 500 .68rem var(--mono); letter-spacing: .1em; text-transform: uppercase; transition: border-color .25s ease, color .25s ease, background .25s ease, box-shadow .25s ease; }
-.mode-toggle svg { width: 1rem; color: var(--gold-light); }
-.mode-toggle:hover { border-color: rgba(240,91,103,.5); color: #fff; }
-.mode-toggle.is-on { border-color: var(--gold); background: linear-gradient(135deg, rgba(212,173,104,.18), rgba(212,173,104,.05)); color: var(--gold-light); box-shadow: 0 0 1.1rem rgba(212,173,104,.16); }
 .search-trigger { display: flex; align-items: center; gap: .6rem; border: 1px solid var(--soft-line); background: linear-gradient(135deg, rgba(255,255,255,.05), rgba(212,59,72,.05)); padding: .5rem .7rem; border-radius: 3px; color: #c8bdc0; font: 400 .72rem var(--mono); letter-spacing: .04em; transition: transform .25s var(--ease), border-color .25s ease, box-shadow .25s ease, color .25s ease; }
 .search-trigger:hover { border-color: rgba(240,91,103,.55); color: #fff; transform: translateY(-2px); box-shadow: 0 .6rem 1.6rem rgba(0,0,0,.3), 0 0 1.4rem rgba(212,59,72,.16); }
 .search-trigger:active { transform: scale(.97); }
@@ -340,6 +336,7 @@ figcaption { margin-top: .6rem; color: var(--faint); font: 400 .66rem var(--mono
  * the whole document. Flexbox does the "pinned header" work here rather
  * than position:sticky, which fights with the row's horizontal scrolling. */
 .fast-page { width: min(92rem, 100%); margin: 0 auto; padding: clamp(1.2rem, 3vw, 2rem) var(--gutter) clamp(1.2rem, 3vw, 2rem); display: flex; flex-direction: column; height: calc(100vh - var(--header-h)); min-height: 28rem; }
+.fast-breadcrumb { flex: none; margin-bottom: .9rem; }
 .fast-head { flex: none; display: grid; gap: .6rem; max-width: 44rem; margin-bottom: clamp(1.1rem, 2.5vw, 1.6rem); }
 .fast-head h1 { margin: 0; font: 700 clamp(1.6rem, 3.4vw, 2.2rem)/1.1 var(--display); color: var(--paper); }
 .fast-head > p { margin: 0; color: var(--muted); }
@@ -522,7 +519,7 @@ figcaption { margin-top: .6rem; color: var(--faint); font: 400 .66rem var(--mono
   .main-nav.open { display: flex; animation: popover-in .25s var(--ease) both; }
   .sections-menu > button { width: 100%; text-align: left; }
   .sections-popover { position: static; width: 100%; margin-top: .6rem; box-shadow: none; }
-  .search-trigger, .mode-toggle { justify-content: center; padding: .8rem; }
+  .search-trigger { justify-content: center; padding: .8rem; }
   .sync-pill span { display: inline; }
   .hero { grid-template-columns: minmax(0, 1fr); }
   .hero-sigil { order: -1; justify-self: center; max-width: 12rem; }

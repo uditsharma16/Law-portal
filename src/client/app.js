@@ -22,8 +22,7 @@ const fallback = {
   ]
 };
 
-const state = { board: null, signature: "", lastSync: 0, live: false, searchIndex: 0, searchMatches: [], fast: false };
-const FAST_KEY = "tso-quick-read";
+const state = { board: null, signature: "", lastSync: 0, live: false, searchIndex: 0, searchMatches: [] };
 const calcState = { charges: [], warrior: false }; // charges: array of offense codes, in the order added
 const app = document.getElementById("app");
 const byId = (id) => document.getElementById(id);
@@ -151,8 +150,6 @@ function titleCase(value = "") {
 }
 
 async function start() {
-  try { state.fast = localStorage.getItem(FAST_KEY) === "1"; } catch { state.fast = false; }
-  applyMode();
   try {
     state.board = await loadBoard();
     state.live = !state.board.preview;
@@ -267,7 +264,7 @@ function route(options = {}) {
   const render = () => {
     const parts = currentPath().split("/").filter(Boolean);
     if (parts[0] === "calculator") return renderCalculator(options);
-    if (state.fast) return renderFast(options);
+    if (parts[0] === "quick-read") return renderFast(options);
     if (!parts.length) return renderHome(options);
     if (parts[0] === "section") {
       const section = state.board.lists.find((item) => slug(item.name) === parts[1]);
@@ -455,20 +452,9 @@ function renderNotFound() {
  * (Ctrl+F, or the filter box) without opening anything — the way Trello
  * itself shows a whole board at a glance. The default UI is untouched until
  * someone turns this on, and the choice is remembered per browser. */
-function applyMode() {
-  document.documentElement.classList.toggle("fast-mode", state.fast);
-  const button = byId("modeToggle");
-  button.classList.toggle("is-on", state.fast);
-  button.setAttribute("aria-pressed", String(state.fast));
-}
-function setFastMode(on) {
-  state.fast = on;
-  try { localStorage.setItem(FAST_KEY, on ? "1" : "0"); } catch {}
-  applyMode();
-}
 function fastRecordBlock(record, sectionName) {
   const text = escapeAttr(`${record.code} ${record.title} ${sectionName} ${stripMarkdown(record.description)}`.toLowerCase());
-  const open = `<a class="fast-open" href="${recordHref(record)}" data-link data-exit-fast title="Open as its own page" aria-label="Open ${escapeAttr(record.title)} as its own page">↗</a>`;
+  const open = `<a class="fast-open" href="${recordHref(record)}" data-link title="Open as its own page" aria-label="Open ${escapeAttr(record.title)} as its own page">↗</a>`;
   if (record.titleOnly) {
     return `<div class="fast-record fast-record-title" id="fast-record-${escapeAttr(record.id)}" data-text="${text}"><h4>${recordLabel(record)}</h4>${chips(record)}</div>`;
   }
@@ -497,9 +483,8 @@ function renderFast(options = {}) {
   document.title = `${state.board.name || "TSO"} — Offenses`;
   const sections = offenseSections();
   const total = sections.reduce((sum, section) => sum + section.cards.length, 0);
-  const parts = currentPath().split("/").filter(Boolean);
-  const targetId = parts[0] === "section" ? `fast-section-${parts[1]}` : parts[0] === "record" ? `fast-record-${decodeURIComponent(parts[1] || "")}` : "";
   app.innerHTML = `<div class="fast-page">
+    <nav class="breadcrumb fast-breadcrumb" aria-label="Breadcrumb"><a href="${link("/")}" data-link>Archive</a><span aria-hidden="true">◆</span><span>Quick Read</span></nav>
     <div class="fast-head">
       <div class="eyebrow">Quick Read</div>
       <h1>Every offense, side by side</h1>
@@ -510,9 +495,7 @@ function renderFast(options = {}) {
   </div>`;
   bindImageFallbacks(app);
   bindFastFilter();
-  const target = targetId && byId(targetId);
-  if (target && !options.preserveScroll) requestAnimationFrame(() => target.scrollIntoView({ behavior: reducedMotion.matches ? "auto" : "smooth", block: "start" }));
-  else if (!options.preserveScroll) { scrollTo({ top: 0, behavior: "auto" }); app.focus({ preventScroll: true }); }
+  if (!options.preserveScroll) { scrollTo({ top: 0, behavior: "auto" }); app.focus({ preventScroll: true }); }
   updateProgress();
 }
 function bindFastFilter() {
@@ -767,7 +750,6 @@ document.addEventListener("click", (event) => {
   if (anchor) {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
     event.preventDefault();
-    if (anchor.hasAttribute("data-exit-fast") && state.fast) setFastMode(false);
     navigate(anchor.getAttribute("href")); return;
   }
   const scroller = event.target.closest("a[data-scroll]");
@@ -996,7 +978,6 @@ function safeUrl(value = "") { try { const url = new URL(value); return ["http:"
 /* ───────── Boot ───────── */
 byId("menuToggle").addEventListener("click", () => { const open = byId("mainNav").classList.toggle("open"); byId("menuToggle").setAttribute("aria-expanded", String(open)); });
 byId("sectionsButton").addEventListener("click", () => { const open = byId("sectionsPopover").classList.toggle("open"); byId("sectionsButton").setAttribute("aria-expanded", String(open)); });
-byId("modeToggle").addEventListener("click", () => { setFastMode(!state.fast); closeMenus(); closeSearch(); route({ instant: true }); });
 byId("searchTrigger").addEventListener("click", () => openSearch());
 byId("closeSearch").addEventListener("click", closeSearch);
 byId("globalSearch").addEventListener("input", (event) => renderSearch(event.target.value));
