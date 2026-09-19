@@ -22,7 +22,8 @@ const fallback = {
   ]
 };
 
-const state = { board: null, signature: "", lastSync: 0, live: false, searchIndex: 0, searchMatches: [] };
+const state = { board: null, signature: "", lastSync: 0, live: false, searchIndex: 0, searchMatches: [], fast: false };
+const FAST_KEY = "tso-quick-read";
 const app = document.getElementById("app");
 const byId = (id) => document.getElementById(id);
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
@@ -89,6 +90,8 @@ function titleCase(value = "") {
 }
 
 async function start() {
+  try { state.fast = localStorage.getItem(FAST_KEY) === "1"; } catch { state.fast = false; }
+  applyMode();
   try {
     state.board = await loadBoard();
     state.live = !state.board.preview;
@@ -201,6 +204,7 @@ function glyph(seed = "") {
 /* ───────── Routing ───────── */
 function route(options = {}) {
   const render = () => {
+    if (state.fast) return renderFast(options);
     const parts = currentPath().split("/").filter(Boolean);
     if (!parts.length) return renderHome(options);
     if (parts[0] === "section") {
@@ -381,6 +385,90 @@ function renderNotFound() {
   afterRender();
 }
 
+/* ───────── Quick Read ─────────
+ * A toggle in the header swaps the whole app between the normal illustrated
+ * pages and a single flat document: every section and every record's full
+ * text, one below the other, so the entire board can be scanned or searched
+ * (Ctrl+F, or the filter box) without opening anything — the way Trello
+ * itself shows a whole board at a glance. The default UI is untouched until
+ * someone turns this on, and the choice is remembered per browser. */
+function applyMode() {
+  document.documentElement.classList.toggle("fast-mode", state.fast);
+  const button = byId("modeToggle");
+  button.classList.toggle("is-on", state.fast);
+  button.setAttribute("aria-pressed", String(state.fast));
+}
+function setFastMode(on) {
+  state.fast = on;
+  try { localStorage.setItem(FAST_KEY, on ? "1" : "0"); } catch {}
+  applyMode();
+}
+function fastRecordBlock(record, sectionName) {
+  const text = escapeAttr(`${record.code} ${record.title} ${sectionName} ${stripMarkdown(record.description)}`.toLowerCase());
+  const open = `<a class="fast-open" href="${recordHref(record)}" data-link data-exit-fast title="Open as its own page" aria-label="Open ${escapeAttr(record.title)} as its own page">↗</a>`;
+  if (record.titleOnly) {
+    return `<div class="fast-record fast-record-title" id="fast-record-${escapeAttr(record.id)}" data-text="${text}"><h4>${recordLabel(record)}</h4>${chips(record)}</div>`;
+  }
+  const body = record.description ? markdown(record.description, { record }) : "";
+  return `<article class="fast-record" id="fast-record-${escapeAttr(record.id)}" data-text="${text}">
+    ${open}
+    <h4>${recordLabel(record)}</h4>
+    <div class="fast-meta">${chips(record)}</div>
+    <div class="prose">${body || `<p class="notice">No written doctrine has been filed under this entry yet.</p>`}</div>
+  </article>`;
+}
+function fastSectionBlock(section, index) {
+  const records = section.cards;
+  return `<section class="fast-section" id="fast-section-${slug(section.name)}">
+    <header class="fast-section-head">
+      <span class="fast-index">${roman(index + 1)}</span>
+      <div><h3>${escapeHtml(section.name)}</h3>${section.tagline ? `<p class="fast-tagline">${escapeHtml(section.tagline)}</p>` : ""}</div>
+      <span class="fast-count">${plural(records.length, "record")}</span>
+    </header>
+    <div class="fast-records">${records.length ? records.map((record) => fastRecordBlock(record, section.name)).join("") : `<p class="no-match">No records are currently filed in this section.</p>`}</div>
+  </section>`;
+}
+function renderFast(options = {}) {
+  document.title = `${state.board.name || "TSO"} — Full Text`;
+  const parts = currentPath().split("/").filter(Boolean);
+  const targetId = parts[0] === "section" ? `fast-section-${parts[1]}` : parts[0] === "record" ? `fast-record-${decodeURIComponent(parts[1] || "")}` : "";
+  const toc = state.board.lists.map((section, index) => `<a href="#fast-section-${slug(section.name)}" data-scroll><em>${roman(index + 1)}</em><span>${escapeHtml(section.name)}</span></a>`).join("");
+  app.innerHTML = `<div class="fast-page">
+    <div class="fast-head">
+      <div class="eyebrow">Quick Read</div>
+      <h1>The whole archive, one page</h1>
+      <p>Every section and every record, in order — scan it, or filter as you type.</p>
+      <label class="fast-filter">${SEARCH_ICON}<input id="fastFilter" type="search" placeholder="Filter the entire archive…" autocomplete="off" aria-label="Filter the entire archive" /><span class="fast-filter-count" id="fastCount">${plural(allRecords().length, "entry").replace("entrys", "entries")}</span></label>
+    </div>
+    <nav class="fast-toc" aria-label="Jump to section">${toc}</nav>
+    <div class="fast-body">${state.board.lists.map(fastSectionBlock).join("")}</div>
+  </div>`;
+  bindImageFallbacks(app);
+  bindFastFilter();
+  const target = targetId && byId(targetId);
+  if (target && !options.preserveScroll) requestAnimationFrame(() => target.scrollIntoView({ behavior: reducedMotion.matches ? "auto" : "smooth", block: "start" }));
+  else if (!options.preserveScroll) { scrollTo({ top: 0, behavior: "auto" }); app.focus({ preventScroll: true }); }
+  updateProgress();
+}
+function bindFastFilter() {
+  const input = byId("fastFilter");
+  const total = allRecords().length;
+  input.addEventListener("input", (event) => {
+    const value = event.target.value.trim().toLowerCase();
+    let shown = 0;
+    app.querySelectorAll(".fast-section").forEach((section) => {
+      let visible = 0;
+      section.querySelectorAll(".fast-record").forEach((row) => {
+        const hit = !value || row.dataset.text.includes(value);
+        row.hidden = !hit; if (hit) visible += 1;
+      });
+      section.hidden = value ? visible === 0 : false;
+      shown += visible;
+    });
+    byId("fastCount").textContent = value ? `${plural(shown, "match").replace("matchs", "matches")}` : `${plural(total, "entry").replace("entrys", "entries")}`;
+  });
+}
+
 /* ───────── Search ───────── */
 function openSearch(prefill) {
   closeMenus();
@@ -454,7 +542,9 @@ document.addEventListener("click", (event) => {
   const anchor = event.target.closest("a[data-link]");
   if (anchor) {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-    event.preventDefault(); navigate(anchor.getAttribute("href")); return;
+    event.preventDefault();
+    if (anchor.hasAttribute("data-exit-fast") && state.fast) setFastMode(false);
+    navigate(anchor.getAttribute("href")); return;
   }
   const scroller = event.target.closest("a[data-scroll]");
   if (scroller) { event.preventDefault(); byId(scroller.getAttribute("href").slice(1))?.scrollIntoView({ behavior: reducedMotion.matches ? "auto" : "smooth", block: "start" }); return; }
@@ -529,6 +619,7 @@ function createAtmosphere() {
   };
   const draw = () => {
     if (!running) return;
+    if (state.fast) { requestAnimationFrame(draw); return; }
     context.clearRect(0, 0, width, height);
     context.globalCompositeOperation = "lighter";
     for (const ember of embers) {
@@ -674,6 +765,7 @@ function safeUrl(value = "") { try { const url = new URL(value); return ["http:"
 /* ───────── Boot ───────── */
 byId("menuToggle").addEventListener("click", () => { const open = byId("mainNav").classList.toggle("open"); byId("menuToggle").setAttribute("aria-expanded", String(open)); });
 byId("sectionsButton").addEventListener("click", () => { const open = byId("sectionsPopover").classList.toggle("open"); byId("sectionsButton").setAttribute("aria-expanded", String(open)); });
+byId("modeToggle").addEventListener("click", () => { setFastMode(!state.fast); closeMenus(); closeSearch(); route({ instant: true }); });
 byId("searchTrigger").addEventListener("click", () => openSearch());
 byId("closeSearch").addEventListener("click", closeSearch);
 byId("globalSearch").addEventListener("input", (event) => renderSearch(event.target.value));
