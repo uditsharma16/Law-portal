@@ -396,22 +396,16 @@ figcaption { margin-top: .6rem; color: var(--faint); font: 400 .66rem var(--mono
 .calc-droid-wrap { --droid-speed: 5.2s; --droid-alert: 255, 90, 106; display: grid; justify-items: center; gap: .42rem; padding: .25rem .5rem .2rem; }
 .calc-droid-wrap[data-tier="severe"] { --droid-speed: 3.7s; --droid-alert: 255, 70, 90; }
 .calc-droid-wrap[data-tier^="ban"] { --droid-speed: 2.8s; --droid-alert: 255, 43, 68; }
-.calc-droid-stage { position: relative; display: grid; place-items: end center; width: 100%; min-height: 9.4rem; isolation: isolate; animation: droid-arrive .55s var(--ease) both; }
-.calc-droid { position: relative; z-index: 2; width: min(4.6rem, 30%); aspect-ratio: 306 / 585; transform-origin: 50% 96%; transform: perspective(60rem) rotateY(var(--dx, 0deg)) rotateX(var(--dy, 0deg)); transition: filter .4s ease; animation: droid-idle var(--droid-speed) ease-in-out infinite; will-change: transform; }
-.calc-droid img { position: relative; z-index: 1; display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 .85rem 1.4rem rgba(0,0,0,.62)); }
+.calc-droid-stage { position: relative; display: grid; place-items: center; width: 100%; min-height: 7.2rem; isolation: isolate; animation: droid-arrive .55s var(--ease) both; }
+.calc-droid { position: relative; z-index: 2; width: min(5.2rem, 34%); aspect-ratio: 373 / 497; overflow: hidden; border: 1px solid rgba(212,173,104,.28); border-radius: 46% 46% 40% 40% / 34% 34% 24% 24%; background: #0b3823; box-shadow: 0 .7rem 1.4rem rgba(0,0,0,.48), 0 0 1rem rgba(var(--droid-alert),.09); transform-origin: 50% 82%; transform: perspective(60rem) rotateY(var(--dx, 0deg)) rotateX(var(--dy, 0deg)); transition: filter .4s ease, border-color .4s ease; animation: droid-idle var(--droid-speed) ease-in-out infinite; will-change: transform; }
+.calc-droid img { position: relative; z-index: 1; display: block; width: 100%; height: 100%; object-fit: cover; filter: saturate(.88) contrast(1.05); }
 .calc-droid-glow { position: absolute; z-index: 0; inset: 3% 5% auto 5%; height: 52%; border-radius: 50%; background: radial-gradient(circle, rgba(var(--droid-alert),.34), transparent 70%); filter: blur(1.1rem); animation: droid-pulse calc(var(--droid-speed) * .72) ease-in-out infinite; }
-.calc-droid-shadow { position: absolute; z-index: 0; left: 50%; bottom: -.05rem; width: 5.4rem; height: .9rem; border-radius: 50%; background: radial-gradient(ellipse, rgba(255,255,255,.82) 0%, rgba(245,241,255,.38) 34%, rgba(207,220,255,.13) 56%, transparent 74%); box-shadow: 0 0 .9rem rgba(255,255,255,.3); filter: blur(3px); transform: translateX(-50%); animation: droid-shadow var(--droid-speed) ease-in-out infinite; }
-.calc-droid-floor-ring { position: absolute; z-index: 0; left: 50%; bottom: .1rem; width: 5.8rem; height: 1.05rem; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; transform: translateX(-50%) scale(.82); opacity: 0; animation: droid-floor-scan calc(var(--droid-speed) * 1.2) ease-out infinite; }
-.droid-scan { position: absolute; z-index: 2; inset: 0; pointer-events: none; background: linear-gradient(180deg, transparent 0 42%, rgba(255,255,255,.22) 49%, transparent 57%); -webkit-mask: url('/assets/inquisitor-droid.webp') center / contain no-repeat; mask: url('/assets/inquisitor-droid.webp') center / contain no-repeat; transform: translateY(-55%); opacity: 0; animation: droid-scan 6.8s ease-in-out infinite; }
-.droid-eye { position: absolute; z-index: 2; width: 4%; aspect-ratio: 1; border-radius: 50%; background: var(--kyber); box-shadow: 0 0 .5rem .12rem var(--red-light); transform: translate(-50%, -50%); animation: droid-blink 2.6s ease-in-out infinite; }
-.droid-eye.e1 { left: 35.3%; top: 5.5%; animation-delay: .1s; }
-.droid-eye.e2 { left: 39.9%; top: 3.4%; animation-delay: .4s; }
-.droid-eye.e3 { left: 44.8%; top: 5.3%; animation-delay: .7s; }
+.droid-scan { position: absolute; z-index: 2; inset: 0; pointer-events: none; background: linear-gradient(180deg, transparent 0 42%, rgba(255,255,255,.18) 49%, transparent 57%); transform: translateY(-55%); opacity: 0; animation: droid-scan 6.8s ease-in-out infinite; }
 .calc-droid-status { display: flex; align-items: center; gap: .42rem; color: var(--faint); font: 600 .56rem/1 var(--mono); letter-spacing: .17em; text-transform: uppercase; }
 .calc-droid-status i { width: .36rem; aspect-ratio: 1; border-radius: 50%; background: rgb(var(--droid-alert)); box-shadow: 0 0 .55rem rgba(var(--droid-alert),.9); animation: droid-status 1.8s ease-in-out infinite; }
 .calc-droid-line { margin: .08rem 0 0; max-width: 18rem; min-height: 2.4em; text-align: center; color: var(--gold-light); font: 500 .78rem/1.4 var(--mono); letter-spacing: .01em; transition: color .3s ease; animation: droid-line-in .45s var(--ease) both; }
 .calc-droid-stage:hover .calc-droid { filter: brightness(1.08); }
-.calc-droid-stage:hover .droid-eye { background: #fff; box-shadow: 0 0 .7rem .18rem var(--red-light); }
+.calc-droid-stage:hover .calc-droid { border-color: rgba(212,173,104,.58); }
 
 .calc-banner { position: relative; padding: 1.1rem 1.3rem; border: 1px solid var(--soft-line); background: var(--panel); transition: border-color .4s ease, box-shadow .4s ease; }
 .calc-banner-label { display: block; margin-bottom: .5rem; color: var(--gold); font: 600 .66rem var(--mono); letter-spacing: .2em; text-transform: uppercase; transition: color .3s ease; }
@@ -451,10 +445,7 @@ figcaption { margin-top: .6rem; color: var(--faint); font: 400 .66rem var(--mono
   76% { transform: perspective(60rem) rotateY(var(--dx, 0deg)) rotateX(var(--dy, 0deg)) translateY(-.28rem) rotate(.9deg) scaleY(.996); }
 }
 @keyframes droid-pulse { 0%, 100% { opacity: .45; transform: scale(1); } 50% { opacity: .7; transform: scale(1.04); } }
-@keyframes droid-blink { 0%, 100% { opacity: .5; transform: translate(-50%, -50%) scale(.85); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); } }
 @keyframes droid-arrive { from { opacity: 0; transform: translateY(.55rem); filter: blur(5px); } }
-@keyframes droid-shadow { 0%, 100% { opacity: .68; transform: translateX(-50%) scaleX(.94); } 24%, 76% { opacity: .88; transform: translateX(-50%) scaleX(1.04); } 52% { opacity: .76; transform: translateX(-50%) scaleX(.98); } }
-@keyframes droid-floor-scan { 0% { opacity: 0; transform: translateX(-50%) scale(.7); } 18% { opacity: .52; } 72%, 100% { opacity: 0; transform: translateX(-50%) scale(1.12); } }
 @keyframes droid-scan { 0%, 60% { opacity: 0; transform: translateY(-55%); } 68% { opacity: .65; } 84% { opacity: .38; transform: translateY(58%); } 100% { opacity: 0; transform: translateY(58%); } }
 @keyframes droid-status { 50% { opacity: .35; transform: scale(.7); } }
 @keyframes droid-line-in { from { opacity: 0; transform: translateY(.25rem); } }

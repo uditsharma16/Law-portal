@@ -653,12 +653,9 @@ function renderCalcPanel() {
     ${v.resolved.length ? `<button type="button" class="btn calc-clear" id="calcClear"><span aria-hidden="true">×</span> Clear all offenses</button>` : ""}
     <div class="calc-droid-wrap" data-tier="${v.tier}">
       <div class="calc-droid-stage">
-        <span class="calc-droid-shadow" aria-hidden="true"></span>
-        <span class="calc-droid-floor-ring" aria-hidden="true"></span>
         <div class="calc-droid" id="calcDroid" data-tier="${v.tier}">
           <div class="calc-droid-glow"></div>
-          <img src="/assets/inquisitor-droid.webp" alt="An Inquisition arrest droid" />
-          <i class="droid-eye e1"></i><i class="droid-eye e2"></i><i class="droid-eye e3"></i>
+          <img src="/assets/inquisitor-droid-portrait.png" alt="An Inquisition arrest droid" />
           <i class="droid-scan" aria-hidden="true"></i>
         </div>
       </div>
