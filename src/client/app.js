@@ -417,6 +417,7 @@ function fastRecordBlock(record, sectionName) {
     <div class="prose">${body || `<p class="notice">No written doctrine has been filed under this entry yet.</p>`}</div>
   </article>`;
 }
+function offenseSections() { return state.board.lists.filter((section) => /offen[cs]e/i.test(section.name)); }
 function fastSectionBlock(section, index) {
   const records = section.cards;
   return `<section class="fast-section" id="fast-section-${slug(section.name)}">
@@ -429,19 +430,21 @@ function fastSectionBlock(section, index) {
   </section>`;
 }
 function renderFast(options = {}) {
-  document.title = `${state.board.name || "TSO"} — Full Text`;
+  document.title = `${state.board.name || "TSO"} — Offenses`;
+  const sections = offenseSections();
+  const total = sections.reduce((sum, section) => sum + section.cards.length, 0);
   const parts = currentPath().split("/").filter(Boolean);
   const targetId = parts[0] === "section" ? `fast-section-${parts[1]}` : parts[0] === "record" ? `fast-record-${decodeURIComponent(parts[1] || "")}` : "";
-  const toc = state.board.lists.map((section, index) => `<a href="#fast-section-${slug(section.name)}" data-scroll><em>${roman(index + 1)}</em><span>${escapeHtml(section.name)}</span></a>`).join("");
+  const toc = sections.map((section, index) => `<a href="#fast-section-${slug(section.name)}" data-scroll><em>${roman(index + 1)}</em><span>${escapeHtml(section.name)}</span></a>`).join("");
   app.innerHTML = `<div class="fast-page">
     <div class="fast-head">
       <div class="eyebrow">Quick Read</div>
-      <h1>The whole archive, one page</h1>
-      <p>Every section and every record, in order — scan it, or filter as you type.</p>
-      <label class="fast-filter">${SEARCH_ICON}<input id="fastFilter" type="search" placeholder="Filter the entire archive…" autocomplete="off" aria-label="Filter the entire archive" /><span class="fast-filter-count" id="fastCount">${plural(allRecords().length, "entry").replace("entrys", "entries")}</span></label>
+      <h1>Every offense, one page</h1>
+      <p>Every offense class and its offenses, in order — scan it, or filter as you type.</p>
+      <label class="fast-filter">${SEARCH_ICON}<input id="fastFilter" type="search" placeholder="Filter the offenses…" autocomplete="off" aria-label="Filter the offenses" /><span class="fast-filter-count" id="fastCount">${plural(total, "entry").replace("entrys", "entries")}</span></label>
     </div>
     <nav class="fast-toc" aria-label="Jump to section">${toc}</nav>
-    <div class="fast-body">${state.board.lists.map(fastSectionBlock).join("")}</div>
+    <div class="fast-body">${sections.map(fastSectionBlock).join("")}</div>
   </div>`;
   bindImageFallbacks(app);
   bindFastFilter();
@@ -452,7 +455,7 @@ function renderFast(options = {}) {
 }
 function bindFastFilter() {
   const input = byId("fastFilter");
-  const total = allRecords().length;
+  const total = offenseSections().reduce((sum, section) => sum + section.cards.length, 0);
   input.addEventListener("input", (event) => {
     const value = event.target.value.trim().toLowerCase();
     let shown = 0;
