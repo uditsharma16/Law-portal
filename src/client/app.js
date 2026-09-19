@@ -101,6 +101,7 @@ async function start() {
   renderMenus();
   route();
   updateSyncLabel();
+  resetGuide();
   if (!PREVIEW) {
     setInterval(refresh, POLL_MS);
     document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - state.lastSync > 20_000) refresh(); });
@@ -220,7 +221,7 @@ function route(options = {}) {
 }
 function navigate(href) {
   const path = href.replace(/^#/, "") || "/";
-  closeSearch(); closeMenus();
+  closeSearch(); closeMenus(); closeGuide();
   if (path === currentPath()) { scrollTo({ top: 0, behavior: "smooth" }); return; }
   if (PREVIEW) location.hash = path; // hashchange triggers route()
   else { history.pushState({}, "", path); route(); }
@@ -383,7 +384,7 @@ function renderNotFound() {
 
 /* ───────── Search ───────── */
 function openSearch(prefill) {
-  closeMenus();
+  closeMenus(); closeGuide();
   const input = byId("globalSearch");
   if (typeof prefill === "string") input.value = prefill;
   byId("searchPanel").hidden = false; document.body.style.overflow = "hidden";
@@ -430,6 +431,111 @@ function moveSearch(step) {
   items[state.searchIndex].scrollIntoView({ block: "nearest" });
 }
 
+/* ───────── Archive Guide ─────────
+ * A deliberately local retrieval assistant. It never sends the question or archive
+ * text anywhere: records are ranked in this tab using phrase, token and typo matches. */
+const GUIDE_STOP_WORDS = new Set(["a", "an", "and", "are", "about", "can", "do", "does", "find", "for", "from", "give", "how", "i", "in", "is", "it", "me", "of", "on", "or", "please", "show", "tell", "that", "the", "this", "to", "what", "when", "where", "which", "who", "why", "with"]);
+const GUIDE_ALIASES = {
+  offence: ["offense", "crime", "violation"], offences: ["offenses", "crimes", "violations"],
+  offense: ["offence", "crime", "violation"], offenses: ["offences", "crimes", "violations"],
+  law: ["rule", "rules", "doctrine"], rules: ["rule", "law", "doctrine"],
+  punishment: ["penalty", "sentence", "sanction"], penalties: ["punishment", "sentence", "sanction"],
+  inquisitor: ["inquisitorius", "inquisition"], sith: ["order", "doctrine"]
+};
+function searchNormal(value = "") { return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim(); }
+function searchTerms(query) {
+  const raw = searchNormal(query); const base = raw.split(/\s+/).filter(Boolean);
+  const useful = base.filter((word) => !GUIDE_STOP_WORDS.has(word));
+  const terms = useful.length ? useful : base;
+  return [...new Set(terms.flatMap((word) => [word, ...(GUIDE_ALIASES[word] || [])]))];
+}
+function editDistance(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    let previous = row[0]; row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) { const saved = row[j]; row[j] = Math.min(row[j] + 1, row[j - 1] + 1, previous + (a[i - 1] === b[j - 1] ? 0 : 1)); previous = saved; }
+  }
+  return row[b.length];
+}
+function rankRecords(query, limit = 30) {
+  const phrase = searchNormal(query); const terms = searchTerms(query);
+  if (!phrase) return searchableRecords().map((record) => ({ record, score: 0 })).slice(0, limit);
+  return searchableRecords().map((record) => {
+    const title = searchNormal(record.title); const name = searchNormal(record.name); const section = searchNormal(record.section.name);
+    const description = searchNormal(stripMarkdown(record.description)); const labels = searchNormal((record.labels || []).map((label) => label.name).join(" "));
+    const titleWords = title.split(" "); const sectionWords = section.split(" ");
+    let score = 0; const hits = [];
+    if (title === phrase || name === phrase) score += 150;
+    else if (title.includes(phrase) || name.includes(phrase)) score += 85;
+    if (section === phrase) score += 95; else if (section.includes(phrase)) score += 55;
+    if (description.includes(phrase)) score += 42;
+    if (record.code && searchNormal(record.code) === phrase) score += 130;
+    for (const term of terms) {
+      let hit = false;
+      if (titleWords.includes(term)) { score += 34; hit = true; }
+      else if (title.includes(term)) { score += 24; hit = true; }
+      if (sectionWords.includes(term)) { score += 22; hit = true; }
+      else if (section.includes(term)) { score += 14; hit = true; }
+      const occurrences = description.split(term).length - 1;
+      if (occurrences) { score += Math.min(18, 5 + occurrences * 2); hit = true; }
+      if (labels.includes(term)) { score += 10; hit = true; }
+      if (!hit && term.length >= 4) {
+        const words = [...titleWords, ...sectionWords].filter((word) => Math.abs(word.length - term.length) <= 2);
+        const near = words.some((word) => editDistance(term, word) <= (term.length > 7 ? 2 : 1));
+        if (near) { score += 12; hit = true; }
+      }
+      if (hit) hits.push(term);
+    }
+    const wanted = Math.min(terms.length, 4); if (wanted > 1 && new Set(hits).size >= wanted) score += 24;
+    return { record, score };
+  }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score || a.record.recordIndex - b.record.recordIndex).slice(0, limit);
+}
+function guideWelcome() {
+  const sections = state.board?.lists || [];
+  const suggestions = sections.slice(0, 3).map((section) => `<button type="button" data-guide-query="${escapeAttr(section.name)}">${escapeHtml(section.name)}</button>`).join("");
+  return `<div class="guide-message"><span class="guide-avatar">◆</span><div class="guide-bubble"><p><strong>The archive is listening.</strong></p><p>Ask about any rule, offence, principle, or doctrine. I will find the closest records and take you directly to them.</p><span class="guide-note">Search happens entirely on this device.</span></div></div>${suggestions ? `<div class="guide-quick">${suggestions}</div>` : ""}`;
+}
+function resetGuide() {
+  byId("guideMessages").innerHTML = guideWelcome();
+  byId("guideIndexStatus").textContent = `${plural(searchableRecords().length, "record")} indexed`;
+}
+function openGuide() {
+  closeSearch(); closeMenus();
+  byId("guidePanel").hidden = false; byId("guideTrigger").setAttribute("aria-expanded", "true");
+  setTimeout(() => byId("guideInput").focus(), reducedMotion.matches ? 0 : 220);
+}
+function closeGuide(returnFocus = false) {
+  if (byId("guidePanel").hidden) return;
+  byId("guidePanel").hidden = true; byId("guideTrigger").setAttribute("aria-expanded", "false");
+  if (returnFocus) byId("guideTrigger").focus();
+}
+function guideExcerpt(record, terms) {
+  const text = stripMarkdown(record.description); if (!text) return excerpt(record);
+  const lower = searchNormal(text); const found = terms.map((term) => lower.indexOf(term)).filter((at) => at >= 0).sort((a, b) => a - b)[0] ?? -1;
+  const from = found > 72 ? Math.max(0, text.lastIndexOf(" ", found - 55)) : 0;
+  const piece = text.slice(from, from + 210).trim(); return `${from ? "…" : ""}${piece}${from + 210 < text.length ? "…" : ""}`;
+}
+function submitGuideQuery(rawQuery) {
+  const query = rawQuery.trim(); if (!query) return;
+  const messages = byId("guideMessages"); const input = byId("guideInput"); input.value = "";
+  messages.insertAdjacentHTML("beforeend", `<div class="guide-message user"><div class="guide-bubble"><p>${escapeHtml(query)}</p></div></div>`);
+  const greeting = /^(hi|hello|hey|help|what can you do)[!?. ]*$/i.test(query);
+  if (greeting) {
+    messages.insertAdjacentHTML("beforeend", guideWelcome());
+  } else {
+    const ranked = rankRecords(query, 8); const visible = ranked.slice(0, 4); const terms = searchTerms(query);
+    if (!ranked.length) {
+      messages.insertAdjacentHTML("beforeend", `<div class="guide-message"><span class="guide-avatar">◆</span><div class="guide-bubble guide-empty"><p>I could not find a close doctrine match. Try fewer words, a section name, or the wording used in the archive.</p><span class="guide-note">Example: “Class-A offences” or “Sith Code”</span></div></div>`);
+    } else {
+      const top = ranked[0].record; const total = ranked.length;
+      const results = visible.map(({ record }) => `<a class="guide-result" href="${recordHref(record)}" data-link><span><small>${escapeHtml(record.section.name)}${record.code ? ` · ${escapeHtml(record.code)}` : ""}</small><strong>${escapeHtml(record.title)}</strong></span><span aria-hidden="true">→</span></a>`).join("");
+      messages.insertAdjacentHTML("beforeend", `<div class="guide-message"><span class="guide-avatar">◆</span><div class="guide-bubble"><p>The closest match is <strong>${escapeHtml(top.title)}</strong> in ${escapeHtml(top.section.name)}.</p><p>${escapeHtml(guideExcerpt(top, terms))}</p><span class="guide-note">${total === 1 ? "1 relevant record found" : `${total} relevant records found · strongest matches shown`}</span><div class="guide-results">${results}</div></div></div>`);
+    }
+  }
+  requestAnimationFrame(() => { messages.scrollTop = messages.scrollHeight; });
+}
+
 /* ───────── Interaction ───────── */
 function closeMenus() {
   byId("mainNav").classList.remove("open"); byId("menuToggle").setAttribute("aria-expanded", "false");
@@ -459,6 +565,8 @@ document.addEventListener("click", (event) => {
   const scroller = event.target.closest("a[data-scroll]");
   if (scroller) { event.preventDefault(); byId(scroller.getAttribute("href").slice(1))?.scrollIntoView({ behavior: reducedMotion.matches ? "auto" : "smooth", block: "start" }); return; }
   if (event.target.closest("[data-open-search]")) { openSearch(); return; }
+  const guideQuery = event.target.closest("[data-guide-query]");
+  if (guideQuery) { submitGuideQuery(guideQuery.dataset.guideQuery); return; }
   const zoom = event.target.closest("[data-zoom]");
   if (zoom) { openLightbox(zoom.dataset.zoom, zoom.dataset.caption || ""); return; }
   if (event.target.closest("#lightbox")) { closeLightbox(); return; }
@@ -549,7 +657,7 @@ function createAtmosphere() {
 
 document.addEventListener("pointerdown", (event) => {
   if (reducedMotion.matches || event.button !== 0) return;
-  const target = event.target.closest(".btn, .search-trigger, .holo, a.record-row, .attachment-links a, .next-record a");
+  const target = event.target.closest(".btn, .search-trigger, .holo, a.record-row, .attachment-links a, .next-record a, .guide-trigger, .guide-form button, .guide-quick button, .guide-result");
   if (!target) return;
   target.classList.add("ripple-host");
   const box = target.getBoundingClientRect();
@@ -682,10 +790,13 @@ byId("globalSearch").addEventListener("keydown", (event) => {
   if (event.key === "ArrowUp") { event.preventDefault(); moveSearch(-1); }
   if (event.key === "Enter") { const record = state.searchMatches[state.searchIndex]; if (record) { event.preventDefault(); navigate(recordHref(record)); } }
 });
+byId("guideTrigger").addEventListener("click", openGuide);
+byId("guideClose").addEventListener("click", () => closeGuide(true));
+byId("guideForm").addEventListener("submit", (event) => { event.preventDefault(); submitGuideQuery(byId("guideInput").value); });
 document.addEventListener("keydown", (event) => {
   const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || "");
   if ((event.key === "/" && !typing && !event.metaKey && !event.ctrlKey) || (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey))) { event.preventDefault(); openSearch(); }
-  if (event.key === "Escape") { closeLightbox(); closeSearch(); closeMenus(); }
+  if (event.key === "Escape") { closeLightbox(); closeSearch(); closeMenus(); closeGuide(true); }
 });
 window.addEventListener(PREVIEW ? "hashchange" : "popstate", () => route());
 createAtmosphere();
