@@ -507,7 +507,7 @@ function guideSectionFor(query) {
 function guideWelcome() {
   const sections = state.board?.lists || [];
   const suggestions = sections.slice(0, 3).map((section) => `<button type="button" data-guide-query="${escapeAttr(section.name)}">${escapeHtml(section.name)}</button>`).join("");
-  return `<div class="guide-message"><span class="guide-avatar">◆</span><div class="guide-bubble"><p><strong>The archive is listening.</strong></p><p>Ask about any rule, offence, principle, or doctrine. I will find the closest records and take you directly to them.</p><span class="guide-note">Search happens entirely on this device.</span></div></div>${suggestions ? `<div class="guide-quick">${suggestions}</div>` : ""}`;
+  return `<div class="guide-message"><span class="guide-avatar">◆</span><div class="guide-bubble"><p><strong>Koolbot is ready.</strong></p><p>Ask about any rule, offence, principle, or doctrine. I will find the closest records and take you directly to them.</p><span class="guide-note">Search happens entirely on this device.</span></div></div>${suggestions ? `<div class="guide-quick">${suggestions}</div>` : ""}`;
 }
 function resetGuide() {
   byId("guideMessages").innerHTML = guideWelcome();
