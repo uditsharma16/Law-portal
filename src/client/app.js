@@ -435,15 +435,13 @@ function renderFast(options = {}) {
   const total = sections.reduce((sum, section) => sum + section.cards.length, 0);
   const parts = currentPath().split("/").filter(Boolean);
   const targetId = parts[0] === "section" ? `fast-section-${parts[1]}` : parts[0] === "record" ? `fast-record-${decodeURIComponent(parts[1] || "")}` : "";
-  const toc = sections.map((section, index) => `<a href="#fast-section-${slug(section.name)}" data-scroll><em>${roman(index + 1)}</em><span>${escapeHtml(section.name)}</span></a>`).join("");
   app.innerHTML = `<div class="fast-page">
     <div class="fast-head">
       <div class="eyebrow">Quick Read</div>
-      <h1>Every offense, one page</h1>
-      <p>Every offense class and its offenses, in order — scan it, or filter as you type.</p>
+      <h1>Every offense, side by side</h1>
+      <p>Every offense class as its own column, like the board itself — scan across, or filter as you type.</p>
       <label class="fast-filter">${SEARCH_ICON}<input id="fastFilter" type="search" placeholder="Filter the offenses…" autocomplete="off" aria-label="Filter the offenses" /><span class="fast-filter-count" id="fastCount">${plural(total, "entry").replace("entrys", "entries")}</span></label>
     </div>
-    <nav class="fast-toc" aria-label="Jump to section">${toc}</nav>
     <div class="fast-body">${sections.map(fastSectionBlock).join("")}</div>
   </div>`;
   bindImageFallbacks(app);
