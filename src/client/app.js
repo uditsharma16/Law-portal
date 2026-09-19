@@ -650,13 +650,20 @@ function renderCalcPanel() {
   renderQuickbar(v);
   const totalLabel = v.totalMin === v.totalMax ? String(v.totalMax) : `${v.totalMin}–${v.totalMax}`;
   panel.innerHTML = `
-    <div class="calc-droid-wrap">
-      <div class="calc-droid" id="calcDroid" data-tier="${v.tier}">
-        <div class="calc-droid-glow"></div>
-        <img src="/assets/inquisitor-droid.webp" alt="An Inquisition arrest droid" />
-        <i class="droid-eye e1"></i><i class="droid-eye e2"></i><i class="droid-eye e3"></i>
+    ${v.resolved.length ? `<button type="button" class="btn calc-clear" id="calcClear"><span aria-hidden="true">×</span> Clear all offenses</button>` : ""}
+    <div class="calc-droid-wrap" data-tier="${v.tier}">
+      <div class="calc-droid-stage">
+        <span class="calc-droid-shadow" aria-hidden="true"></span>
+        <span class="calc-droid-floor-ring" aria-hidden="true"></span>
+        <div class="calc-droid" id="calcDroid" data-tier="${v.tier}">
+          <div class="calc-droid-glow"></div>
+          <img src="/assets/inquisitor-droid.webp" alt="An Inquisition arrest droid" />
+          <i class="droid-eye e1"></i><i class="droid-eye e2"></i><i class="droid-eye e3"></i>
+          <i class="droid-scan" aria-hidden="true"></i>
+        </div>
       </div>
-      <p class="calc-droid-line">${escapeHtml(DROID_LINES[v.tier])}</p>
+      <span class="calc-droid-status"><i aria-hidden="true"></i> Inquisition unit active</span>
+      <p class="calc-droid-line" aria-live="polite">${escapeHtml(DROID_LINES[v.tier])}</p>
     </div>
     <div class="calc-banner tier-${v.tier}">
       <span class="calc-banner-label">${BANNER_LABEL[v.tier]}</span>
@@ -666,7 +673,6 @@ function renderCalcPanel() {
     ${v.flags.length ? `<ul class="calc-flags">${v.flags.map((flag) => `<li>${escapeHtml(flag)}</li>`).join("")}</ul>` : ""}
     <label class="calc-warrior"><input type="checkbox" id="calcWarriorToggle" ${calcState.warrior ? "checked" : ""} /><span>Offender holds Warrior rank or above</span></label>
     <div class="calc-stack" id="calcStack">${v.resolved.length ? v.resolved.map(renderChargeRow).join("") : `<p class="no-match">No charges stacked yet.</p>`}</div>
-    ${v.resolved.length ? `<button type="button" class="btn calc-clear" id="calcClear">Clear all charges</button>` : ""}
   `;
   animateCalcTotal(v.totalMin, v.totalMax);
   byId("calcWarriorToggle").addEventListener("change", (event) => { calcState.warrior = event.target.checked; renderCalcPanel(); });
