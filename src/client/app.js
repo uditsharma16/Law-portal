@@ -442,7 +442,13 @@ const GUIDE_ALIASES = {
   punishment: ["penalty", "sentence", "sanction"], penalties: ["punishment", "sentence", "sanction"],
   inquisitor: ["inquisitorius", "inquisition"], sith: ["order", "doctrine"]
 };
-function searchNormal(value = "") { return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim(); }
+function searchNormal(value = "") { return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").replace(/\boffences\b/g, "offenses").replace(/\boffence\b/g, "offense").trim(); }
+function searchIntent(query) {
+  return searchNormal(query)
+    .replace(/^(?:please\s+)?(?:can you\s+|could you\s+|would you\s+)?(?:tell me about|show me|find|search for|look for)\s+/, "")
+    .replace(/^(?:what|which|where|who)\s+(?:is|are|was|were)\s+/, "")
+    .trim();
+}
 function searchTerms(query) {
   const raw = searchNormal(query); const base = raw.split(/\s+/).filter(Boolean);
   const useful = base.filter((word) => !GUIDE_STOP_WORDS.has(word));
@@ -459,7 +465,7 @@ function editDistance(a, b) {
   return row[b.length];
 }
 function rankRecords(query, limit = 30) {
-  const phrase = searchNormal(query); const terms = searchTerms(query);
+  const phrase = searchIntent(query) || searchNormal(query); const terms = searchTerms(query);
   if (!phrase) return searchableRecords().map((record) => ({ record, score: 0 })).slice(0, limit);
   return searchableRecords().map((record) => {
     const title = searchNormal(record.title); const name = searchNormal(record.name); const section = searchNormal(record.section.name);
@@ -468,7 +474,7 @@ function rankRecords(query, limit = 30) {
     let score = 0; const hits = [];
     if (title === phrase || name === phrase) score += 150;
     else if (title.includes(phrase) || name.includes(phrase)) score += 85;
-    if (section === phrase) score += 95; else if (section.includes(phrase)) score += 55;
+    if (section === phrase) score += 240; else if (section.includes(phrase) || phrase.includes(section)) score += 100;
     if (description.includes(phrase)) score += 42;
     if (record.code && searchNormal(record.code) === phrase) score += 130;
     for (const term of terms) {
@@ -490,6 +496,13 @@ function rankRecords(query, limit = 30) {
     const wanted = Math.min(terms.length, 4); if (wanted > 1 && new Set(hits).size >= wanted) score += 24;
     return { record, score };
   }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score || a.record.recordIndex - b.record.recordIndex).slice(0, limit);
+}
+function guideSectionFor(query) {
+  const wanted = searchIntent(query); if (!wanted) return null;
+  return state.board.lists.find((section) => {
+    const name = searchNormal(section.name);
+    return name === wanted || wanted.includes(name) || (wanted.length >= 6 && editDistance(wanted, name) <= 2);
+  }) || null;
 }
 function guideWelcome() {
   const sections = state.board?.lists || [];
@@ -524,13 +537,20 @@ function submitGuideQuery(rawQuery) {
   if (greeting) {
     messages.insertAdjacentHTML("beforeend", guideWelcome());
   } else {
-    const ranked = rankRecords(query, 8); const visible = ranked.slice(0, 4); const terms = searchTerms(query);
+    const matchedSection = guideSectionFor(query);
+    const ranked = matchedSection
+      ? matchedSection.cards.filter((record) => !record.titleOnly).map((record) => ({ record: { ...record, section: matchedSection }, score: 300 })).slice(0, 8)
+      : rankRecords(query, 8);
+    const visible = ranked.slice(0, 4); const terms = searchTerms(query);
     if (!ranked.length) {
       messages.insertAdjacentHTML("beforeend", `<div class="guide-message"><span class="guide-avatar">◆</span><div class="guide-bubble guide-empty"><p>I could not find a close doctrine match. Try fewer words, a section name, or the wording used in the archive.</p><span class="guide-note">Example: “Class-A offences” or “Sith Code”</span></div></div>`);
     } else {
       const top = ranked[0].record; const total = ranked.length;
       const results = visible.map(({ record }) => `<a class="guide-result" href="${recordHref(record)}" data-link><span><small>${escapeHtml(record.section.name)}${record.code ? ` · ${escapeHtml(record.code)}` : ""}</small><strong>${escapeHtml(record.title)}</strong></span><span aria-hidden="true">→</span></a>`).join("");
-      messages.insertAdjacentHTML("beforeend", `<div class="guide-message"><span class="guide-avatar">◆</span><div class="guide-bubble"><p>The closest match is <strong>${escapeHtml(top.title)}</strong> in ${escapeHtml(top.section.name)}.</p><p>${escapeHtml(guideExcerpt(top, terms))}</p><span class="guide-note">${total === 1 ? "1 relevant record found" : `${total} relevant records found · strongest matches shown`}</span><div class="guide-results">${results}</div></div></div>`);
+      const answer = matchedSection
+        ? `<p>I found <strong>${escapeHtml(matchedSection.name)}</strong>. This section contains ${plural(total, "searchable record")}.</p><p>Select a record to read its complete doctrine.</p>`
+        : `<p>The closest match is <strong>${escapeHtml(top.title)}</strong> in ${escapeHtml(top.section.name)}.</p><p>${escapeHtml(guideExcerpt(top, terms))}</p>`;
+      messages.insertAdjacentHTML("beforeend", `<div class="guide-message"><span class="guide-avatar">◆</span><div class="guide-bubble">${answer}<span class="guide-note">${matchedSection ? "Section match · first records shown" : total === 1 ? "1 relevant record found" : `${total} relevant records found · strongest matches shown`}</span><div class="guide-results">${results}</div></div></div>`);
     }
   }
   requestAnimationFrame(() => { messages.scrollTop = messages.scrollHeight; });
