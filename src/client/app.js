@@ -633,10 +633,21 @@ function calcPickerColumn(section, index) {
     </button>`).join("")}</div>
   </div>`;
 }
+function renderQuickbar(v) {
+  const bar = byId("calcQuickbar");
+  if (!bar) return;
+  const totalLabel = v.totalMin === v.totalMax ? String(v.totalMax) : `${v.totalMin}–${v.totalMax}`;
+  bar.innerHTML = `<a href="#calcVerdict" data-scroll class="calc-quickbar-inner tier-${v.tier}">
+    <span class="calc-quickbar-label">${BANNER_LABEL[v.tier]}</span>
+    <span class="calc-quickbar-total">${totalLabel} <small>min</small></span>
+    <span class="calc-quickbar-meter"><i style="width:${Math.min(100, (v.totalMax / BAN_MINUTES) * 100)}%"></i></span>
+  </a>`;
+}
 function renderCalcPanel() {
   const panel = byId("calcVerdict");
   if (!panel) return;
   const v = computeVerdict();
+  renderQuickbar(v);
   const totalLabel = v.totalMin === v.totalMax ? String(v.totalMax) : `${v.totalMin}–${v.totalMax}`;
   panel.innerHTML = `
     <div class="calc-droid-wrap">
@@ -669,6 +680,7 @@ function renderCalculator(options) {
       <h1>Sentencing Calculator</h1>
       <p>Stack every offense the individual committed and the sentence updates live. Times are the arresting Inquisitor's discretion within the listed range and may not exceed it — a total of ${BAN_MINUTES} minutes or more calls for a server ban.</p>
     </header>
+    <div class="calc-quickbar" id="calcQuickbar"></div>
     <div class="calc-layout">
       <div class="calc-picker" id="calcPicker">${offenseSections().map(calcPickerColumn).join("")}</div>
       <aside class="calc-verdict" id="calcVerdict" aria-label="Verdict"></aside>
