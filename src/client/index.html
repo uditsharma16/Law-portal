@@ -71,23 +71,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <div class="lightbox" id="lightbox" hidden><button id="lightboxClose" aria-label="Close image">Close</button><img id="lightboxImage" alt="" /><p id="lightboxCaption"></p></div>
 
-  <button class="guide-trigger" id="guideTrigger" aria-label="Open Koolbot" aria-controls="guidePanel" aria-expanded="false">
-    <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 6 58 52H6L32 6Z"/><path d="m32 20 13 24H19l13-24Z"/><circle cx="32" cy="43" r="3"/></svg>
-    <span>Ask Koolbot</span><i aria-hidden="true"></i>
-  </button>
-  <section class="guide-panel" id="guidePanel" role="dialog" aria-label="Koolbot" hidden>
-    <header class="guide-header">
-      <span class="guide-mark"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 6 58 52H6L32 6Z"/><path d="m32 20 13 24H19l13-24Z"/></svg></span>
-      <span><strong>Koolbot</strong><small><i></i> Local doctrine search</small></span>
-      <button id="guideClose" aria-label="Close Koolbot">×</button>
-    </header>
-    <div class="guide-messages" id="guideMessages" aria-live="polite"></div>
-    <form class="guide-form" id="guideForm">
-      <label for="guideInput">Search the archive</label>
-      <div><input id="guideInput" type="search" placeholder="Ask about a rule, offence, or doctrine…" autocomplete="off" maxlength="180" /><button type="submit" aria-label="Search"><span>→</span></button></div>
-    </form>
-    <footer><span id="guideIndexStatus">Preparing the archive…</span><span>No AI · No data sent</span></footer>
-  </section>
   <!-- app:end -->
 
   <script src="/app.js" defer></script>
