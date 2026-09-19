@@ -24,10 +24,71 @@ const fallback = {
 
 const state = { board: null, signature: "", lastSync: 0, live: false, searchIndex: 0, searchMatches: [], fast: false };
 const FAST_KEY = "tso-quick-read";
+const calcState = { charges: [], warrior: false }; // charges: array of offense codes, in the order added
 const app = document.getElementById("app");
 const byId = (id) => document.getElementById(id);
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const LABEL_COLORS = { green: "#5fbf8a", yellow: "#e2c45a", orange: "#f0994a", red: "#ff6471", purple: "#b48cf2", blue: "#6aa5ff", sky: "#63cdf0", lime: "#a6d65c", pink: "#f58ac4", black: "#a79da0" };
+
+/* ───────── Sentencing data ─────────
+ * From "The Inquisition | Arrest Times and Protocols" (last updated 06/04/2026).
+ * `minutes: [min, max]` is the arresting Inquisitor's discretionary range; `cap: true`
+ * means the doctrine states only a ceiling ("max 30 minutes"), shown as "up to Nm".
+ * `repeat` describes what a SECOND instance of the same charge becomes; `repeatAgain`
+ * covers a third. Offenses without either simply stack their base time again. */
+const PUNISHMENTS = {
+  "A-01": { minutes: [5, 5], note: "Verbal warning, then the :warn command, then arrest.",
+    repeat: { becomes: "B-01", note: "A second Disturbing the Peace is treated as Minor Toxicity (B-01)." } },
+  "A-02": { minutes: [5, 5], note: "Verbal warning, then :warn, then arrest.",
+    repeat: { minutes: [10, 10], note: "A repeat offense doubles the arrest time." } },
+  "A-03": { minutes: [5, 5], note: "Verbal warning, then :warn, then arrest.",
+    repeat: { minutes: [10, 10], note: "A repeat offense doubles the arrest time." } },
+  "A-04": { minutes: [5, 5], note: "Verbal warning, then :warn, then arrest.",
+    repeat: { minutes: [10, 10], note: "A repeat offense doubles the arrest time." } },
+  "A-05": { minutes: [5, 5], note: "Verbal warning, then :warn, then arrest. No further escalation is on file." },
+  "A-06": { minutes: [5, 5], extra: "to change the outfit", note: "Verbal warning, then :warn, then arrest.",
+    repeat: { minutes: [0, 0], tag: "kick", note: "A second offense is a kick, not an arrest." },
+    repeatAgain: { minutes: [0, 0], tag: "ban-server", note: "A third offense is a server ban." } },
+  "B-01": { minutes: [10, 15], note: "Time is at the arresting Inquisitor's discretion within this range.",
+    repeat: { becomes: "C-01", note: "Continuing to target the same individual escalates to Harassment (C-01)." } },
+  "B-02": { minutes: [10, 15], note: "Time is at the arresting Inquisitor's discretion within this range." },
+  "B-03": { minutes: [10, 15], note: "Time is at the arresting Inquisitor's discretion within this range.", notifyIfWarrior: "Notify High Command." },
+  "B-04": { minutes: [10, 15], note: "Time is at the arresting Inquisitor's discretion within this range." },
+  "B-05": { minutes: [10, 15], note: "Time is at the arresting Inquisitor's discretion within this range.", notifyIfWarrior: "Notify Inquisition High Command." },
+  "B-06": { minutes: [5, 10], note: "Time is at the arresting Inquisitor's discretion within this range.", notifyIfWarrior: "Notify High Command." },
+  "B-07": { minutes: [5, 10], note: "Time is at the arresting Inquisitor's discretion within this range.", notifyIfWarrior: "Notify High Command." },
+  "B-08": { minutes: [15, 15], note: "A flat 15 minutes.", notifyIfWarrior: "Notify Inquisition High Command.",
+    repeat: { minutes: [0, 0], tag: "ban-server", note: "A repeat offense is a server ban." } },
+  "B-09": { minutes: [0, 0], tag: "special", note: "AFK 15+ minutes farming Force Points or crystals: verbal warning, then a kick if unresponsive, then a server ban if it continues." },
+  "C-01": { minutes: [30, 30], cap: true, note: "Up to 30 minutes, at the arresting Inquisitor's discretion.", reportAlways: "Report to Inquisition High Command." },
+  "C-02": { minutes: [15, 30], note: "Time is at the arresting Inquisitor's discretion within this range." },
+  "C-03": { minutes: [0, 0], tag: "report", note: "No arrest time specified.", reportAlways: "Report to Inquisition High Command." },
+  "C-04": { minutes: [15, 30], note: "Time is at the arresting Inquisitor's discretion within this range." },
+  "C-05": { minutes: [30, 30], cap: true, note: "Up to 30 minutes, at the arresting Inquisitor's discretion.", reportAlways: "Report to Inquisition High Command." },
+  "C-06": { minutes: [0, 0], tag: "ban-game", note: "A game ban.", reportAlways: "Report to Inquisition High Command." },
+  "C-07": { minutes: [20, 30], note: "Time is at the arresting Inquisitor's discretion within this range.", notifyIfWarrior: "Notify High Command." },
+  "C-08": { minutes: [0, 0], tag: "report", note: "No arrest time specified.", reportAlways: "Report to Inquisition High Command." },
+  "C-09": { minutes: [20, 30], note: "Time is at the arresting Inquisitor's discretion within this range. Leaving the game to dodge jail time escalates to a server ban, then a game ban if it continues.", notifyIfWarrior: "Notify the Judicars." },
+  "C-10": { minutes: [30, 30], cap: true, note: "Up to 30 minutes, at the arresting Inquisitor's discretion." },
+  "C-11": { minutes: [0, 0], tag: "report", note: "No arrest time specified.", reportAlways: "Report to Inquisition High Command." }
+};
+const BAN_MINUTES = 45; // "If the arrest times stack to 45 minutes, immediately request a server-ban."
+/* Working out what a given occurrence of a charge actually costs — the 2nd Trespassing
+ * charges 10 minutes instead of 5, a 2nd Disturbing the Peace is really a Minor Toxicity
+ * charge, and so on. `seen` is how many times this code has already been resolved. */
+function resolvePunishment(code, seen) {
+  const entry = PUNISHMENTS[code];
+  if (!entry) return null;
+  if (seen >= 2 && entry.repeatAgain) return { ...entry, ...entry.repeatAgain, sourceCode: code, escalated: entry.repeatAgain.note };
+  if (seen >= 1 && entry.repeat) {
+    if (entry.repeat.becomes) {
+      const target = PUNISHMENTS[entry.repeat.becomes];
+      return { ...entry, ...target, sourceCode: entry.repeat.becomes, escalated: entry.repeat.note };
+    }
+    return { ...entry, ...entry.repeat, sourceCode: code, escalated: entry.repeat.note };
+  }
+  return { ...entry, sourceCode: code, escalated: null };
+}
 
 /* ───────── Data + live sync ───────── */
 async function loadBoard() {
@@ -204,8 +265,9 @@ function glyph(seed = "") {
 /* ───────── Routing ───────── */
 function route(options = {}) {
   const render = () => {
-    if (state.fast) return renderFast(options);
     const parts = currentPath().split("/").filter(Boolean);
+    if (parts[0] === "calculator") return renderCalculator(options);
+    if (state.fast) return renderFast(options);
     if (!parts.length) return renderHome(options);
     if (parts[0] === "section") {
       const section = state.board.lists.find((item) => slug(item.name) === parts[1]);
@@ -230,6 +292,7 @@ function navigate(href) {
   else { history.pushState({}, "", path); route(); }
 }
 function afterRender(options = {}) {
+  document.documentElement.classList.remove("board-open"); // only the offense board locks page scroll
   bindImageFallbacks(app); bindMotion(app); observeReveals(app);
   if (!options.preserveScroll) { scrollTo({ top: 0, behavior: "auto" }); app.focus({ preventScroll: true }); }
   updateProgress();
@@ -430,6 +493,7 @@ function fastSectionBlock(section, index) {
   </section>`;
 }
 function renderFast(options = {}) {
+  document.documentElement.classList.add("board-open");
   document.title = `${state.board.name || "TSO"} — Offenses`;
   const sections = offenseSections();
   const total = sections.reduce((sum, section) => sum + section.cards.length, 0);
@@ -468,6 +532,150 @@ function bindFastFilter() {
     });
     byId("fastCount").textContent = value ? `${plural(shown, "match").replace("matchs", "matches")}` : `${plural(total, "entry").replace("entrys", "entries")}`;
   });
+}
+
+/* ───────── Sentencing Calculator ─────────
+ * Pick offenses on the left; the stack and verdict on the right update as you go. Each
+ * offense's live title still comes from the Trello record (via its code), only the
+ * punishment numbers are local — the board has no notion of arrest time. */
+const BANNER_LABEL = { empty: "No Charges", calm: "Minor", elevated: "Elevated", severe: "Severe", "ban-server": "Server Ban", "ban-game": "Game Ban" };
+const DROID_LINES = {
+  empty: "Awaiting charges, Inquisitor.",
+  calm: "Minor infraction logged.",
+  elevated: "Escalating — proceed with caution.",
+  severe: "Multiple violations confirmed.",
+  "ban-server": "Sentence exceeds protocol. Server ban advised.",
+  "ban-game": "Game ban on file."
+};
+function timeBadge(entry) {
+  if (!entry) return "No data";
+  if (entry.tag === "ban-server" || entry.tag === "ban-game") return "Ban";
+  if (entry.tag === "kick") return "Kick";
+  if (entry.tag === "report") return "Report";
+  if (entry.tag === "special") return "Special";
+  const [min, max] = entry.minutes;
+  if (min === 0 && max === 0) return "—";
+  if (entry.cap) return `up to ${max}m`;
+  if (min === max) return `${min}m`;
+  return `${min}–${max}m`;
+}
+function calcOffenseTitle(code) {
+  const record = allRecords().find((item) => item.code === code);
+  return record ? record.title : code;
+}
+function computeVerdict() {
+  const seen = {};
+  const resolved = calcState.charges.map((code, index) => {
+    const count = seen[code] || 0;
+    seen[code] = count + 1;
+    return { code, index, resolved: resolvePunishment(code, count) };
+  });
+  let totalMin = 0, totalMax = 0, hasBanServer = false, hasBanGame = false, hasKick = false;
+  const flags = new Set();
+  resolved.forEach(({ resolved: r }) => {
+    if (!r) return;
+    totalMin += r.minutes[0]; totalMax += r.minutes[1];
+    if (r.tag === "ban-server") hasBanServer = true;
+    if (r.tag === "ban-game") hasBanGame = true;
+    if (r.tag === "kick") hasKick = true;
+    if (r.reportAlways) flags.add(r.reportAlways);
+    if (calcState.warrior && r.notifyIfWarrior) flags.add(r.notifyIfWarrior);
+  });
+  if (totalMax >= BAN_MINUTES) hasBanServer = true;
+  if (hasKick) flags.add("Kick");
+  let tier = "empty";
+  if (hasBanServer) tier = "ban-server";
+  else if (hasBanGame) tier = "ban-game";
+  else if (totalMax >= 30) tier = "severe";
+  else if (totalMax >= 15) tier = "elevated";
+  else if (resolved.length) tier = "calm";
+  return { resolved, totalMin, totalMax, flags: [...flags], tier };
+}
+function addCharge(code) { calcState.charges.push(code); renderCalcPanel(); }
+function removeChargeAt(index) { calcState.charges.splice(index, 1); renderCalcPanel(); }
+function clearCharges() { calcState.charges = []; renderCalcPanel(); }
+function animateCalcTotal(min, max) {
+  const el = byId("calcTotalNum");
+  if (!el) return;
+  if (min !== max || reducedMotion.matches) { el.textContent = min === max ? String(max) : `${min}–${max}`; el.dataset.shown = String(max); return; }
+  const from = Number(el.dataset.shown || 0);
+  if (from === max) { el.textContent = String(max); return; }
+  const began = performance.now(); const duration = 550;
+  const token = (animateCalcTotal.token = (animateCalcTotal.token || 0) + 1);
+  const tick = (now) => {
+    if (animateCalcTotal.token !== token) return;
+    const t = Math.min(1, (now - began) / duration);
+    el.textContent = String(Math.round(from + (max - from) * (1 - Math.pow(1 - t, 3))));
+    if (t < 1) requestAnimationFrame(tick); else el.dataset.shown = String(max);
+  };
+  requestAnimationFrame(tick);
+}
+function renderChargeRow({ code, index, resolved }) {
+  if (!resolved) return `<div class="calc-charge" style="--d:${Math.min(index * 40, 240)}ms"><div class="calc-charge-main"><span class="record-code">${escapeHtml(code)}</span><span class="calc-charge-title">No sentencing data on file for this offense.</span><button type="button" class="calc-remove" data-remove="${index}" aria-label="Remove this charge">×</button></div></div>`;
+  return `<div class="calc-charge" style="--d:${Math.min(index * 40, 240)}ms">
+    <div class="calc-charge-main">
+      <span class="record-code">${escapeHtml(resolved.sourceCode)}</span>
+      <span class="calc-charge-title">${escapeHtml(calcOffenseTitle(resolved.sourceCode))}</span>
+      <span class="calc-charge-time">${timeBadge(resolved)}</span>
+      <button type="button" class="calc-remove" data-remove="${index}" aria-label="Remove this charge">×</button>
+    </div>
+    ${resolved.escalated ? `<p class="calc-escalated">${escapeHtml(resolved.escalated)}</p>` : ""}
+  </div>`;
+}
+function calcPickerColumn(section, index) {
+  const offenses = section.cards.filter((record) => record.code);
+  return `<div class="calc-column">
+    <div class="calc-column-head"><span class="fast-index">${roman(index + 1)}</span><h3>${escapeHtml(section.name)}</h3></div>
+    <div class="calc-offenses">${offenses.map((record) => `<button type="button" class="calc-offense" data-add="${escapeAttr(record.code)}">
+      <span class="record-code">${escapeHtml(record.code)}</span>
+      <span class="calc-offense-title">${escapeHtml(record.title)}</span>
+      <span class="calc-offense-time">${timeBadge(PUNISHMENTS[record.code])}</span>
+    </button>`).join("")}</div>
+  </div>`;
+}
+function renderCalcPanel() {
+  const panel = byId("calcVerdict");
+  if (!panel) return;
+  const v = computeVerdict();
+  const totalLabel = v.totalMin === v.totalMax ? String(v.totalMax) : `${v.totalMin}–${v.totalMax}`;
+  panel.innerHTML = `
+    <div class="calc-droid-wrap">
+      <div class="calc-droid" id="calcDroid" data-tier="${v.tier}">
+        <div class="calc-droid-glow"></div>
+        <img src="/assets/inquisitor-droid.webp" alt="An Inquisition arrest droid" />
+        <i class="droid-eye e1"></i><i class="droid-eye e2"></i><i class="droid-eye e3"></i>
+      </div>
+      <p class="calc-droid-line">${escapeHtml(DROID_LINES[v.tier])}</p>
+    </div>
+    <div class="calc-banner tier-${v.tier}">
+      <span class="calc-banner-label">${BANNER_LABEL[v.tier]}</span>
+      <div class="calc-total"><b id="calcTotalNum">${totalLabel}</b><span>minutes</span></div>
+      <div class="calc-meter"><i style="width:${Math.min(100, (v.totalMax / BAN_MINUTES) * 100)}%"></i></div>
+    </div>
+    ${v.flags.length ? `<ul class="calc-flags">${v.flags.map((flag) => `<li>${escapeHtml(flag)}</li>`).join("")}</ul>` : ""}
+    <label class="calc-warrior"><input type="checkbox" id="calcWarriorToggle" ${calcState.warrior ? "checked" : ""} /><span>Offender holds Warrior rank or above</span></label>
+    <div class="calc-stack" id="calcStack">${v.resolved.length ? v.resolved.map(renderChargeRow).join("") : `<p class="no-match">No charges stacked yet.</p>`}</div>
+    ${v.resolved.length ? `<button type="button" class="btn calc-clear" id="calcClear">Clear all charges</button>` : ""}
+  `;
+  animateCalcTotal(v.totalMin, v.totalMax);
+  byId("calcWarriorToggle").addEventListener("change", (event) => { calcState.warrior = event.target.checked; renderCalcPanel(); });
+}
+function renderCalculator(options) {
+  document.title = "Sentencing Calculator — TSO Doctrine";
+  app.innerHTML = `<div class="page calc-page">
+    <nav class="breadcrumb" aria-label="Breadcrumb"><a href="${link("/")}" data-link>Archive</a><span aria-hidden="true">◆</span><span>Sentencing Calculator</span></nav>
+    <header class="calc-header">
+      <div class="eyebrow">The Inquisition</div>
+      <h1>Sentencing Calculator</h1>
+      <p>Stack every offense the individual committed and the sentence updates live. Times are the arresting Inquisitor's discretion within the listed range and may not exceed it — a total of ${BAN_MINUTES} minutes or more calls for a server ban.</p>
+    </header>
+    <div class="calc-layout">
+      <div class="calc-picker" id="calcPicker">${offenseSections().map(calcPickerColumn).join("")}</div>
+      <aside class="calc-verdict" id="calcVerdict" aria-label="Verdict"></aside>
+    </div>
+  </div>`;
+  renderCalcPanel();
+  afterRender(options);
 }
 
 /* ───────── Search ───────── */
@@ -550,6 +758,11 @@ document.addEventListener("click", (event) => {
   const scroller = event.target.closest("a[data-scroll]");
   if (scroller) { event.preventDefault(); byId(scroller.getAttribute("href").slice(1))?.scrollIntoView({ behavior: reducedMotion.matches ? "auto" : "smooth", block: "start" }); return; }
   if (event.target.closest("[data-open-search]")) { openSearch(); return; }
+  const addCharge_ = event.target.closest("[data-add]");
+  if (addCharge_) { addCharge(addCharge_.dataset.add); return; }
+  const removeCharge_ = event.target.closest("[data-remove]");
+  if (removeCharge_) { removeChargeAt(Number(removeCharge_.dataset.remove)); return; }
+  if (event.target.closest("#calcClear")) { clearCharges(); return; }
   const zoom = event.target.closest("[data-zoom]");
   if (zoom) { openLightbox(zoom.dataset.zoom, zoom.dataset.caption || ""); return; }
   if (event.target.closest("#lightbox")) { closeLightbox(); return; }
@@ -603,6 +816,8 @@ function createAtmosphere() {
       root.setProperty("--pointer-x", `${event.clientX}px`); root.setProperty("--pointer-y", `${event.clientY}px`);
       const sigil = byId("heroSigil");
       if (sigil) { sigil.style.setProperty("--sx", `${(event.clientX / innerWidth - .5) * 16}deg`); sigil.style.setProperty("--sy", `${(.5 - event.clientY / innerHeight) * 12}deg`); }
+      const droid = byId("calcDroid");
+      if (droid) { const box = droid.getBoundingClientRect(); const dx = (event.clientX - (box.left + box.width / 2)) / innerWidth; const dy = (event.clientY - (box.top + box.height / 2)) / innerHeight; droid.style.setProperty("--dx", `${dx * 10}deg`); droid.style.setProperty("--dy", `${dy * -8}deg`); }
       frame = 0;
     });
   }, { passive: true });
@@ -620,7 +835,7 @@ function createAtmosphere() {
   };
   const draw = () => {
     if (!running) return;
-    if (state.fast) { requestAnimationFrame(draw); return; }
+    if (document.documentElement.classList.contains("board-open")) { requestAnimationFrame(draw); return; }
     context.clearRect(0, 0, width, height);
     context.globalCompositeOperation = "lighter";
     for (const ember of embers) {
