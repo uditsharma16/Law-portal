@@ -67,7 +67,7 @@ const PUNISHMENTS = {
   "C-06": { minutes: [0, 0], tag: "ban-game", note: "A game ban.", reportAlways: "Report to Inquisition High Command." },
   "C-07": { minutes: [20, 30], note: "Time is at the arresting Inquisitor's discretion within this range.", notifyIfWarrior: "Notify High Command." },
   "C-08": { minutes: [0, 0], tag: "report", note: "No arrest time specified.", reportAlways: "Report to Inquisition High Command." },
-  "C-09": { minutes: [20, 30], note: "Time is at the arresting Inquisitor's discretion within this range. Leaving the game to dodge jail time escalates to a server ban, then a game ban if it continues.", notifyIfWarrior: "Notify the Judicars." },
+  "C-09": { minutes: [20, 30], note: "Time is at the arresting Inquisitor's discretion within this range. Leaving the game to dodge jail time escalates to a server ban, then a game ban if it continues." },
   "C-10": { minutes: [30, 30], cap: true, note: "Up to 30 minutes, at the arresting Inquisitor's discretion." },
   "C-11": { minutes: [0, 0], tag: "report", note: "No arrest time specified.", reportAlways: "Report to Inquisition High Command." }
 };
@@ -530,6 +530,21 @@ const DROID_LINES = {
   "ban-server": "Sentence exceeds protocol. Server ban advised.",
   "ban-game": "Game ban on file."
 };
+function repeatOutcome(step) {
+  if (step.becomes) return `becomes ${calcOffenseTitle(step.becomes)} (${step.becomes})`;
+  if (step.tag === "kick") return "a kick, not an arrest";
+  if (step.tag === "ban-server") return "a server ban";
+  if (step.tag === "ban-game") return "a game ban";
+  if (step.minutes) return timeBadge(step);
+  return "";
+}
+function escalationSummary(code) {
+  const entry = PUNISHMENTS[code];
+  if (!entry || !entry.repeat) return "";
+  const parts = [`2nd offense: ${repeatOutcome(entry.repeat)}`];
+  if (entry.repeatAgain) parts.push(`3rd: ${repeatOutcome(entry.repeatAgain)}`);
+  return parts.join(" · ");
+}
 function timeBadge(entry) {
   if (!entry) return "No data";
   if (entry.tag === "ban-server" || entry.tag === "ban-game") return "Ban";
@@ -595,6 +610,7 @@ function animateCalcTotal(min, max) {
 }
 function renderChargeRow({ code, index, resolved }) {
   if (!resolved) return `<div class="calc-charge" style="--d:${Math.min(index * 40, 240)}ms"><div class="calc-charge-main"><span class="record-code">${escapeHtml(code)}</span><span class="calc-charge-title">No sentencing data on file for this offense.</span><button type="button" class="calc-remove" data-remove="${index}" aria-label="Remove this charge">×</button></div></div>`;
+  const forecast = !resolved.escalated ? escalationSummary(code) : "";
   return `<div class="calc-charge" style="--d:${Math.min(index * 40, 240)}ms">
     <div class="calc-charge-main">
       <span class="record-code">${escapeHtml(resolved.sourceCode)}</span>
@@ -603,6 +619,7 @@ function renderChargeRow({ code, index, resolved }) {
       <button type="button" class="calc-remove" data-remove="${index}" aria-label="Remove this charge">×</button>
     </div>
     ${resolved.escalated ? `<p class="calc-escalated">${escapeHtml(resolved.escalated)}</p>` : ""}
+    ${forecast ? `<p class="calc-forecast">If repeated: ${escapeHtml(forecast)}</p>` : ""}
   </div>`;
 }
 function calcPickerColumn(section, index) {
@@ -613,6 +630,7 @@ function calcPickerColumn(section, index) {
       <span class="record-code">${escapeHtml(record.code)}</span>
       <span class="calc-offense-title">${escapeHtml(record.title)}</span>
       <span class="calc-offense-time">${timeBadge(PUNISHMENTS[record.code])}</span>
+      ${escalationSummary(record.code) ? `<span class="calc-offense-repeat">If repeated: ${escapeHtml(escalationSummary(record.code))}</span>` : ""}
     </button>`).join("")}</div>
   </div>`;
 }
