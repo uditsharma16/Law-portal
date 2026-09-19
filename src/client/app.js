@@ -61,15 +61,16 @@ const PUNISHMENTS = {
   "B-09": { minutes: [0, 0], tag: "special", note: "AFK 15+ minutes farming Force Points or crystals: verbal warning, then a kick if unresponsive, then a server ban if it continues." },
   "C-01": { minutes: [30, 30], cap: true, note: "Up to 30 minutes, at the arresting Inquisitor's discretion.", reportAlways: "Report to Inquisition High Command." },
   "C-02": { minutes: [15, 30], note: "Time is at the arresting Inquisitor's discretion within this range." },
-  "C-03": { minutes: [0, 0], tag: "report", note: "No arrest time specified.", reportAlways: "Report to Inquisition High Command." },
+  "C-03": { minutes: [0, 0], tag: "report", note: "No arrest time — report straight to Inquisition High Command.", reportAlways: "Report to Inquisition High Command." },
   "C-04": { minutes: [15, 30], note: "Time is at the arresting Inquisitor's discretion within this range." },
   "C-05": { minutes: [30, 30], cap: true, note: "Up to 30 minutes, at the arresting Inquisitor's discretion.", reportAlways: "Report to Inquisition High Command." },
   "C-06": { minutes: [0, 0], tag: "ban-game", note: "A game ban.", reportAlways: "Report to Inquisition High Command." },
   "C-07": { minutes: [20, 30], note: "Time is at the arresting Inquisitor's discretion within this range.", notifyIfWarrior: "Notify High Command." },
-  "C-08": { minutes: [0, 0], tag: "report", note: "No arrest time specified.", reportAlways: "Report to Inquisition High Command." },
-  "C-09": { minutes: [20, 30], note: "Time is at the arresting Inquisitor's discretion within this range. Leaving the game to dodge jail time escalates to a server ban, then a game ban if it continues." },
+  "C-08": { minutes: [0, 0], tag: "report", note: "No arrest time — report straight to Inquisition High Command.", reportAlways: "Report to Inquisition High Command." },
+  "C-09": { minutes: [20, 30], note: "Time is at the arresting Inquisitor's discretion within this range.",
+    escalates: "Leaving the game to dodge jail time escalates to a server ban, then a game ban if it continues." },
   "C-10": { minutes: [30, 30], cap: true, note: "Up to 30 minutes, at the arresting Inquisitor's discretion." },
-  "C-11": { minutes: [0, 0], tag: "report", note: "No arrest time specified.", reportAlways: "Report to Inquisition High Command." }
+  "C-11": { minutes: [0, 0], tag: "report", note: "No arrest time — report straight to Inquisition High Command.", reportAlways: "Report to Inquisition High Command." }
 };
 const BAN_MINUTES = 45; // "If the arrest times stack to 45 minutes, immediately request a server-ban."
 /* Working out what a given occurrence of a charge actually costs — the 2nd Trespassing
@@ -545,6 +546,19 @@ function escalationSummary(code) {
   if (entry.repeatAgain) parts.push(`3rd: ${repeatOutcome(entry.repeatAgain)}`);
   return parts.join(" · ");
 }
+/* The best explanation available for an offense whose flat time badge alone doesn't
+ * tell the whole story: either what a repeat becomes ("If repeated: ...") or, for
+ * offenses tagged special/report/ban that have no numeric range at all, the doctrine's
+ * own description of the actual protocol (kick, ban, who gets notified, ...). */
+function offenseNote(code) {
+  const entry = PUNISHMENTS[code];
+  if (!entry) return "";
+  const summary = escalationSummary(code);
+  if (summary) return `If repeated: ${summary}`;
+  if (entry.tag) return entry.note;
+  if (entry.escalates) return entry.escalates;
+  return "";
+}
 function timeBadge(entry) {
   if (!entry) return "No data";
   if (entry.tag === "ban-server" || entry.tag === "ban-game") return "Ban";
@@ -610,7 +624,7 @@ function animateCalcTotal(min, max) {
 }
 function renderChargeRow({ code, index, resolved }) {
   if (!resolved) return `<div class="calc-charge" style="--d:${Math.min(index * 40, 240)}ms"><div class="calc-charge-main"><span class="record-code">${escapeHtml(code)}</span><span class="calc-charge-title">No sentencing data on file for this offense.</span><button type="button" class="calc-remove" data-remove="${index}" aria-label="Remove this charge">×</button></div></div>`;
-  const forecast = !resolved.escalated ? escalationSummary(code) : "";
+  const forecast = !resolved.escalated ? offenseNote(code) : "";
   return `<div class="calc-charge" style="--d:${Math.min(index * 40, 240)}ms">
     <div class="calc-charge-main">
       <span class="record-code">${escapeHtml(resolved.sourceCode)}</span>
@@ -619,7 +633,7 @@ function renderChargeRow({ code, index, resolved }) {
       <button type="button" class="calc-remove" data-remove="${index}" aria-label="Remove this charge">×</button>
     </div>
     ${resolved.escalated ? `<p class="calc-escalated">${escapeHtml(resolved.escalated)}</p>` : ""}
-    ${forecast ? `<p class="calc-forecast">If repeated: ${escapeHtml(forecast)}</p>` : ""}
+    ${forecast ? `<p class="calc-forecast">${escapeHtml(forecast)}</p>` : ""}
   </div>`;
 }
 function calcPickerColumn(section, index) {
@@ -630,7 +644,7 @@ function calcPickerColumn(section, index) {
       <span class="record-code">${escapeHtml(record.code)}</span>
       <span class="calc-offense-title">${escapeHtml(record.title)}</span>
       <span class="calc-offense-time">${timeBadge(PUNISHMENTS[record.code])}</span>
-      ${escalationSummary(record.code) ? `<span class="calc-offense-repeat">If repeated: ${escapeHtml(escalationSummary(record.code))}</span>` : ""}
+      ${offenseNote(record.code) ? `<span class="calc-offense-repeat">${escapeHtml(offenseNote(record.code))}</span>` : ""}
     </button>`).join("")}</div>
   </div>`;
 }
