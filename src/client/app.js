@@ -23,71 +23,143 @@ const fallback = {
 };
 
 const state = { board: null, signature: "", lastSync: 0, live: false, searchIndex: 0, searchMatches: [] };
-const calcState = { charges: [], warrior: false }; // charges: array of offense codes, in the order added
+const calcState = { charges: [], warrior: false }; // charges: [{ code, tierIndex, severity }], in the order added
 const app = document.getElementById("app");
 const byId = (id) => document.getElementById(id);
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const LABEL_COLORS = { green: "#5fbf8a", yellow: "#e2c45a", orange: "#f0994a", red: "#ff6471", purple: "#b48cf2", blue: "#6aa5ff", sky: "#63cdf0", lime: "#a6d65c", pink: "#f58ac4", black: "#a79da0" };
 
 /* ───────── Sentencing data ─────────
- * From "The Inquisition | Arrest Times and Protocols" (last updated 06/04/2026).
- * `minutes: [min, max]` is the arresting Inquisitor's discretionary range; `cap: true`
- * means the doctrine states only a ceiling ("max 30 minutes"), shown as "up to Nm".
- * `repeat` describes what a SECOND instance of the same charge becomes; `repeatAgain`
- * covers a third. Offenses without either simply stack their base time again. */
+ * From the "Arrest Times and Punishments" spreadsheet (source: The Inquisition |
+ * Arrest Times and Protocols, last updated 06/04/2026). Each offense is a list of
+ * tiers — what a 1st, 2nd, 3rd... offense actually costs, read straight from the
+ * sheet's own 1st/2nd/3rd-4th Punishment columns rather than inferred from a repeat
+ * count. `minutes: [min, max]` that differ is a severity range (the calculator shows
+ * a slider); equal min/max is a flat time; `cap: true` means the doctrine states only
+ * a ceiling ("max 30 minutes"). `becomes` swaps the whole tier for another offense's
+ * first tier — a third Disturbing the Peace really is a Minor Toxicity charge. */
 const PUNISHMENTS = {
-  "A-01": { minutes: [5, 5], note: "Verbal warning, then the :warn command, then arrest.",
-    repeat: { becomes: "B-01", note: "A second Disturbing the Peace is treated as Minor Toxicity (B-01)." } },
-  "A-02": { minutes: [5, 5], note: "Verbal warning, then :warn, then arrest.",
-    repeat: { minutes: [10, 10], note: "A repeat offense doubles the arrest time." } },
-  "A-03": { minutes: [5, 5], note: "Verbal warning, then :warn, then arrest.",
-    repeat: { minutes: [10, 10], note: "A repeat offense doubles the arrest time." } },
-  "A-04": { minutes: [5, 5], note: "Verbal warning, then :warn, then arrest.",
-    repeat: { minutes: [10, 10], note: "A repeat offense doubles the arrest time." } },
-  "A-05": { minutes: [5, 5], note: "Verbal warning, then :warn, then arrest. No further escalation is on file." },
-  "A-06": { minutes: [5, 5], extra: "to change the outfit", note: "Verbal warning, then :warn, then arrest.",
-    repeat: { minutes: [0, 0], tag: "kick", note: "A second offense is a kick, not an arrest." },
-    repeatAgain: { minutes: [0, 0], tag: "ban-server", note: "A third offense is a server ban." } },
-  "B-01": { minutes: [10, 15], note: "Time is at the arresting Inquisitor's discretion within this range.",
-    repeat: { becomes: "C-01", note: "Continuing to target the same individual escalates to Harassment (C-01)." } },
-  "B-02": { minutes: [10, 15], note: "Time is at the arresting Inquisitor's discretion within this range." },
-  "B-03": { minutes: [10, 15], note: "Time is at the arresting Inquisitor's discretion within this range.", notifyIfWarrior: "Notify High Command." },
-  "B-04": { minutes: [10, 15], note: "Time is at the arresting Inquisitor's discretion within this range." },
-  "B-05": { minutes: [10, 15], note: "Time is at the arresting Inquisitor's discretion within this range.", notifyIfWarrior: "Notify Inquisition High Command." },
-  "B-06": { minutes: [5, 10], note: "Time is at the arresting Inquisitor's discretion within this range.", notifyIfWarrior: "Notify High Command." },
-  "B-07": { minutes: [5, 10], note: "Time is at the arresting Inquisitor's discretion within this range.", notifyIfWarrior: "Notify High Command." },
-  "B-08": { minutes: [15, 15], note: "A flat 15 minutes.", notifyIfWarrior: "Notify Inquisition High Command.",
-    repeat: { minutes: [0, 0], tag: "ban-server", note: "A repeat offense is a server ban." } },
-  "B-09": { minutes: [0, 0], tag: "special", note: "AFK 15+ minutes farming Force Points or crystals: verbal warning, then a kick if unresponsive, then a server ban if it continues." },
-  "C-01": { minutes: [30, 30], cap: true, note: "Up to 30 minutes, at the arresting Inquisitor's discretion.", reportAlways: "Report to Inquisition High Command." },
-  "C-02": { minutes: [15, 30], note: "Time is at the arresting Inquisitor's discretion within this range." },
-  "C-03": { minutes: [0, 0], tag: "report", note: "No arrest time — report straight to Inquisition High Command.", reportAlways: "Report to Inquisition High Command." },
-  "C-04": { minutes: [15, 30], note: "Time is at the arresting Inquisitor's discretion within this range." },
-  "C-05": { minutes: [30, 30], cap: true, note: "Up to 30 minutes, at the arresting Inquisitor's discretion.", reportAlways: "Report to Inquisition High Command." },
-  "C-06": { minutes: [0, 0], tag: "ban-game", note: "A game ban.", reportAlways: "Report to Inquisition High Command." },
-  "C-07": { minutes: [20, 30], note: "Time is at the arresting Inquisitor's discretion within this range.", notifyIfWarrior: "Notify High Command." },
-  "C-08": { minutes: [0, 0], tag: "report", note: "No arrest time — report straight to Inquisition High Command.", reportAlways: "Report to Inquisition High Command." },
-  "C-09": { minutes: [20, 30], note: "Time is at the arresting Inquisitor's discretion within this range.",
-    escalates: "Leaving the game to dodge jail time escalates to a server ban, then a game ban if it continues." },
-  "C-10": { minutes: [30, 30], cap: true, note: "Up to 30 minutes, at the arresting Inquisitor's discretion." },
-  "C-11": { minutes: [0, 0], tag: "report", note: "No arrest time — report straight to Inquisition High Command.", reportAlways: "Report to Inquisition High Command." }
+  "A-01": { tiers: [
+    { label: "1st offense", tag: "warning" },
+    { label: "2nd offense", minutes: [5, 5] },
+    { label: "3rd+ offense", becomes: "B-01" }
+  ] },
+  "A-02": { tiers: [
+    { label: "1st offense", tag: "warning" },
+    { label: "2nd offense", minutes: [5, 5] },
+    { label: "3rd+ offense", minutes: [10, 10], note: "Arrest time doubles." }
+  ] },
+  "A-03": { tiers: [
+    { label: "1st offense", tag: "warning" },
+    { label: "2nd offense", minutes: [5, 5] },
+    { label: "3rd+ offense", minutes: [10, 10], note: "Arrest time doubles." }
+  ] },
+  "A-04": { tiers: [
+    { label: "1st offense", tag: "warning" },
+    { label: "2nd offense", minutes: [5, 5] },
+    { label: "3rd+ offense", minutes: [10, 10], note: "Arrest time doubles." }
+  ] },
+  "A-05": { tiers: [
+    { label: "1st offense", tag: "warning" },
+    { label: "2nd+ offense", minutes: [5, 5], note: "No further escalation is on file." }
+  ] },
+  "A-06": { tiers: [
+    { label: "1st offense", tag: "warning" },
+    { label: "2nd offense", minutes: [5, 5], note: "To change the outfit." },
+    { label: "3rd offense", tag: "kick" },
+    { label: "4th+ offense", tag: "ban-server" }
+  ] },
+  "B-01": { tiers: [
+    { label: "1st offense", minutes: [10, 15] },
+    { label: "2nd+ offense (same target)", becomes: "C-01", note: "Continuing to target the same individual escalates to Harassment." }
+  ] },
+  "B-02": { tiers: [ { label: "Each offense", minutes: [10, 15] } ] },
+  "B-03": { tiers: [ { label: "Each offense", minutes: [10, 15], notifyIfWarrior: "Notify High Command." } ] },
+  "B-04": { tiers: [ { label: "Each offense", minutes: [10, 15] } ] },
+  "B-05": { tiers: [ { label: "Each offense", minutes: [10, 15], notifyIfWarrior: "Notify Inquisition High Command." } ] },
+  "B-06": { tiers: [ { label: "Each offense", minutes: [5, 10], notifyIfWarrior: "Notify High Command." } ] },
+  "B-07": { tiers: [ { label: "Each offense", minutes: [5, 10], notifyIfWarrior: "Notify High Command." } ] },
+  "B-08": { tiers: [
+    { label: "1st offense", minutes: [15, 15], notifyIfWarrior: "Notify Inquisition High Command." },
+    { label: "2nd+ offense", tag: "ban-server", notifyIfWarrior: "Notify Inquisition High Command." }
+  ] },
+  "B-09": { tiers: [
+    { label: "1st offense", tag: "warning", note: "AFK 15+ minutes farming Force Points or crystals." },
+    { label: "2nd offense", tag: "kick" },
+    { label: "3rd+ offense", tag: "ban-server" }
+  ] },
+  "C-01": { tiers: [ { label: "Each offense", minutes: [30, 30], cap: true, reportAlways: "Report to Inquisition High Command." } ] },
+  "C-02": { tiers: [ { label: "Each offense", minutes: [15, 30] } ] },
+  "C-03": { tiers: [ { label: "Each offense", tag: "report", reportAlways: "Report to Inquisition High Command." } ] },
+  "C-04": { tiers: [ { label: "Each offense", minutes: [15, 30] } ] },
+  "C-05": { tiers: [ { label: "Each offense", minutes: [30, 30], cap: true, reportAlways: "Report to Inquisition High Command." } ] },
+  "C-06": { tiers: [ { label: "Each offense", tag: "ban-game", reportAlways: "Report to Inquisition High Command." } ] },
+  "C-07": { tiers: [ { label: "Each offense", minutes: [20, 30], notifyIfWarrior: "Notify High Command." } ] },
+  "C-08": { tiers: [ { label: "Each offense", tag: "report", reportAlways: "Report to Inquisition High Command." } ] },
+  "C-09": { tiers: [
+    { label: "1st offense", minutes: [20, 30] },
+    { label: "2nd offense", tag: "ban-server", note: "If they left the game to dodge jail time." },
+    { label: "3rd+ offense", tag: "ban-game" }
+  ] },
+  "C-10": { tiers: [ { label: "Each offense", minutes: [30, 30], cap: true } ] },
+  "C-11": { tiers: [ { label: "Each offense", tag: "report", reportAlways: "Report to Inquisition High Command." } ] }
 };
 const BAN_MINUTES = 45; // "If the arrest times stack to 45 minutes, immediately request a server-ban."
-/* Working out what a given occurrence of a charge actually costs — the 2nd Trespassing
- * charges 10 minutes instead of 5, a 2nd Disturbing the Peace is really a Minor Toxicity
- * charge, and so on. `seen` is how many times this code has already been resolved. */
-function resolvePunishment(code, seen) {
+/* The chosen tier for a charge, redirected to the target offense's first tier when the
+ * tier itself is a "becomes" swap (a 3rd Disturbing the Peace really is a Minor
+ * Toxicity charge, not a fourth kind of Disturbing the Peace). */
+function resolveTier(code, tierIndex) {
   const entry = PUNISHMENTS[code];
   if (!entry) return null;
-  if (seen >= 2 && entry.repeatAgain) return { ...entry, ...entry.repeatAgain, sourceCode: code, escalated: entry.repeatAgain.note };
-  if (seen >= 1 && entry.repeat) {
-    if (entry.repeat.becomes) {
-      const target = PUNISHMENTS[entry.repeat.becomes];
-      return { ...entry, ...target, sourceCode: entry.repeat.becomes, escalated: entry.repeat.note };
-    }
-    return { ...entry, ...entry.repeat, sourceCode: code, escalated: entry.repeat.note };
+  const index = Math.min(Math.max(tierIndex, 0), entry.tiers.length - 1);
+  const tier = entry.tiers[index];
+  if (tier.becomes) {
+    const target = PUNISHMENTS[tier.becomes];
+    return { ...target.tiers[0], sourceCode: tier.becomes, viaLabel: tier.label, viaNote: tier.note };
   }
-  return { ...entry, sourceCode: code, escalated: null };
+  return { ...tier, sourceCode: code, viaLabel: null, viaNote: null };
+}
+function tierIsRange(tier) { return !!tier.minutes && tier.minutes[0] !== tier.minutes[1]; }
+/* Where a range tier actually lands: the charge's own chosen severity if it has one,
+ * otherwise the range's midpoint. Flat tiers and cap ceilings just use their number. */
+function tierMinutes(tier, severity) {
+  if (!tier.minutes) return 0;
+  if (!tierIsRange(tier)) return tier.minutes[1];
+  const mid = Math.round((tier.minutes[0] + tier.minutes[1]) / 2);
+  return Math.min(Math.max(severity ?? mid, tier.minutes[0]), tier.minutes[1]);
+}
+function severityLabel(tier, minutes) {
+  if (!tierIsRange(tier)) return "";
+  const [min, max] = tier.minutes;
+  const t = (minutes - min) / (max - min);
+  return t <= 1 / 3 ? "Minor" : t <= 2 / 3 ? "Moderate" : "Severe";
+}
+/* A resolved value's badge — the exact number once a severity has been chosen. */
+function tierBadge(tier, minutes) {
+  if (tier.tag === "warning") return "Warning";
+  if (tier.tag === "kick") return "Kick";
+  if (tier.tag === "ban-server" || tier.tag === "ban-game") return "Ban";
+  if (tier.tag === "report") return "Report";
+  if (!tier.minutes) return "—";
+  if (tier.cap) return `up to ${tier.minutes[1]}m`;
+  return `${minutes}m`;
+}
+/* A tier's own label before any severity has been picked — shows the full range. */
+function tierRangeLabel(tier) {
+  if (tier.becomes) return `becomes ${calcOffenseTitle(tier.becomes)} (${tier.becomes})`;
+  if (tier.tag === "warning") return "Warning";
+  if (tier.tag === "kick") return "Kick";
+  if (tier.tag === "ban-server" || tier.tag === "ban-game") return "Ban";
+  if (tier.tag === "report") return "Report";
+  if (!tier.minutes) return "—";
+  if (tier.cap) return `up to ${tier.minutes[1]}m`;
+  if (tier.minutes[0] === tier.minutes[1]) return `${tier.minutes[1]}m`;
+  return `${tier.minutes[0]}–${tier.minutes[1]}m`;
+}
+function tierSummary(code) {
+  const entry = PUNISHMENTS[code];
+  if (!entry || entry.tiers.length < 2) return "";
+  return entry.tiers.map((tier) => `${tier.label}: ${tierRangeLabel(tier)}`).join(" · ");
 }
 
 /* ───────── Data + live sync ───────── */
@@ -101,15 +173,6 @@ async function loadBoard() {
 }
 const signatureOf = (board) => JSON.stringify([board.name, board.description, board.lists]);
 
-/* Trello boards are written by people, not for a website, so a little interpretation
- * happens here before anything renders:
- *  - cards named "---" (or similar) are visual dividers on the board and are dropped;
- *  - a list whose first card has no description is using that card as a heading for
- *    the list ("Imperial Crimes", "Special Locations"…). It becomes the section's
- *    tagline (and artwork, if it carries an image) instead of an empty record;
- *  - names like "A-01 | Trespassing" are split into a code and a title;
- *  - a leading heading or bold line that just repeats the card's name is removed
- *    from the description, since the page already shows the title. */
 function prepareBoard(board) {
   const lists = board.lists.map((list) => {
     const cards = list.cards
@@ -531,131 +594,162 @@ const DROID_LINES = {
   "ban-server": "Sentence exceeds protocol. Server ban advised.",
   "ban-game": "Game ban on file."
 };
-function repeatOutcome(step) {
-  if (step.becomes) return `becomes ${calcOffenseTitle(step.becomes)} (${step.becomes})`;
-  if (step.tag === "kick") return "a kick, not an arrest";
-  if (step.tag === "ban-server") return "a server ban";
-  if (step.tag === "ban-game") return "a game ban";
-  if (step.minutes) return timeBadge(step);
-  return "";
-}
-function escalationSummary(code) {
-  const entry = PUNISHMENTS[code];
-  if (!entry || !entry.repeat) return "";
-  const parts = [`2nd offense: ${repeatOutcome(entry.repeat)}`];
-  if (entry.repeatAgain) parts.push(`3rd: ${repeatOutcome(entry.repeatAgain)}`);
-  return parts.join(" · ");
-}
-/* The best explanation available for an offense whose flat time badge alone doesn't
- * tell the whole story: either what a repeat becomes ("If repeated: ...") or, for
- * offenses tagged special/report/ban that have no numeric range at all, the doctrine's
- * own description of the actual protocol (kick, ban, who gets notified, ...). */
-function offenseNote(code) {
-  const entry = PUNISHMENTS[code];
-  if (!entry) return "";
-  const summary = escalationSummary(code);
-  if (summary) return `If repeated: ${summary}`;
-  if (entry.tag) return entry.note;
-  if (entry.escalates) return entry.escalates;
-  return "";
-}
-function timeBadge(entry) {
-  if (!entry) return "No data";
-  if (entry.tag === "ban-server" || entry.tag === "ban-game") return "Ban";
-  if (entry.tag === "kick") return "Kick";
-  if (entry.tag === "report") return "Report";
-  if (entry.tag === "special") return "Special";
-  const [min, max] = entry.minutes;
-  if (min === 0 && max === 0) return "—";
-  if (entry.cap) return `up to ${max}m`;
-  if (min === max) return `${min}m`;
-  return `${min}–${max}m`;
-}
 function calcOffenseTitle(code) {
   const record = allRecords().find((item) => item.code === code);
   return record ? record.title : code;
 }
 function computeVerdict() {
-  const seen = {};
-  const resolved = calcState.charges.map((code, index) => {
-    const count = seen[code] || 0;
-    seen[code] = count + 1;
-    return { code, index, resolved: resolvePunishment(code, count) };
-  });
-  let totalMin = 0, totalMax = 0, hasBanServer = false, hasBanGame = false, hasKick = false;
+  let total = 0, hasBanServer = false, hasBanGame = false, hasKick = false;
   const flags = new Set();
-  resolved.forEach(({ resolved: r }) => {
-    if (!r) return;
-    totalMin += r.minutes[0]; totalMax += r.minutes[1];
-    if (r.tag === "ban-server") hasBanServer = true;
-    if (r.tag === "ban-game") hasBanGame = true;
-    if (r.tag === "kick") hasKick = true;
-    if (r.reportAlways) flags.add(r.reportAlways);
-    if (calcState.warrior && r.notifyIfWarrior) flags.add(r.notifyIfWarrior);
+  const resolved = calcState.charges.map((charge, index) => {
+    const tier = resolveTier(charge.code, charge.tierIndex);
+    if (!tier) return { charge, index, tier: null, minutes: 0 };
+    const minutes = tierMinutes(tier, charge.severity);
+    total += minutes;
+    if (tier.tag === "ban-server") hasBanServer = true;
+    if (tier.tag === "ban-game") hasBanGame = true;
+    if (tier.tag === "kick") hasKick = true;
+    if (tier.reportAlways) flags.add(tier.reportAlways);
+    if (calcState.warrior && tier.notifyIfWarrior) flags.add(tier.notifyIfWarrior);
+    return { charge, index, tier, minutes };
   });
-  if (totalMax >= BAN_MINUTES) hasBanServer = true;
+  if (total >= BAN_MINUTES) hasBanServer = true;
   if (hasKick) flags.add("Kick");
   let tier = "empty";
   if (hasBanServer) tier = "ban-server";
   else if (hasBanGame) tier = "ban-game";
-  else if (totalMax >= 30) tier = "severe";
-  else if (totalMax >= 15) tier = "elevated";
+  else if (total >= 30) tier = "severe";
+  else if (total >= 15) tier = "elevated";
   else if (resolved.length) tier = "calm";
-  return { resolved, totalMin, totalMax, flags: [...flags], tier };
+  return { resolved, total, flags: [...flags], tier };
 }
-function addCharge(code) { calcState.charges.push(code); renderCalcPanel(); }
+/* A freshly added charge starts at the first tier, with severity defaulted to the
+ * middle of whatever range that (possibly redirected) tier turns out to be. */
+function defaultSeverity(code, tierIndex) {
+  const tier = resolveTier(code, tierIndex);
+  return tier && tierIsRange(tier) ? Math.round((tier.minutes[0] + tier.minutes[1]) / 2) : null;
+}
+function addCharge(code) {
+  calcState.charges.push({ code, tierIndex: 0, severity: defaultSeverity(code, 0) });
+  renderCalcPanel();
+}
 function removeChargeAt(index) { calcState.charges.splice(index, 1); renderCalcPanel(); }
 function clearCharges() { calcState.charges = []; renderCalcPanel(); }
-function animateCalcTotal(min, max) {
+function setChargeTier(index, tierIndex) {
+  const charge = calcState.charges[index];
+  if (!charge) return;
+  charge.tierIndex = tierIndex;
+  charge.severity = defaultSeverity(charge.code, tierIndex);
+  renderCalcPanel();
+}
+function setChargeSeverity(index, minutes) {
+  const charge = calcState.charges[index];
+  if (!charge) return;
+  charge.severity = minutes;
+  updateCalcNumbers(); // patch numbers in place — a full re-render would drop the slider mid-drag
+}
+function animateCalcTotal(target) {
   const el = byId("calcTotalNum");
   if (!el) return;
-  if (min !== max || reducedMotion.matches) { el.textContent = min === max ? String(max) : `${min}–${max}`; el.dataset.shown = String(max); return; }
-  const from = Number(el.dataset.shown || 0);
-  if (from === max) { el.textContent = String(max); return; }
-  const began = performance.now(); const duration = 550;
+  const from = Number(el.dataset.shown ?? target);
+  el.dataset.shown = String(target); // correct immediately; the tween below is cosmetic only
+  if (reducedMotion.matches || from === target) { el.textContent = String(target); return; }
+  const began = performance.now(); const duration = 500;
   const token = (animateCalcTotal.token = (animateCalcTotal.token || 0) + 1);
   const tick = (now) => {
-    if (animateCalcTotal.token !== token) return;
+    if (animateCalcTotal.token !== token) return; // a newer call already owns the final paint
     const t = Math.min(1, (now - began) / duration);
-    el.textContent = String(Math.round(from + (max - from) * (1 - Math.pow(1 - t, 3))));
-    if (t < 1) requestAnimationFrame(tick); else el.dataset.shown = String(max);
+    el.textContent = String(Math.round(from + (target - from) * (1 - Math.pow(1 - t, 3))));
+    if (t < 1) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
+  // Safety net: if rAF never fires (backgrounded tab, throttled frame loop, ...) the
+  // number must still end up correct — never let a decorative tween own correctness.
+  setTimeout(() => { if (animateCalcTotal.token === token) el.textContent = String(target); }, duration + 60);
 }
-function renderChargeRow({ code, index, resolved }) {
-  if (!resolved) return `<div class="calc-charge" style="--d:${Math.min(index * 40, 240)}ms"><div class="calc-charge-main"><span class="record-code">${escapeHtml(code)}</span><span class="calc-charge-title">No sentencing data on file for this offense.</span><button type="button" class="calc-remove" data-remove="${index}" aria-label="Remove this charge">×</button></div></div>`;
-  const forecast = !resolved.escalated ? offenseNote(code) : "";
+/* Reflects the current verdict on the header droid without touching the rest of the
+ * page — called both after a full panel re-render and after a severity drag. */
+function updateDroidReaction(v) {
+  const wrap = document.querySelector(".calc-droid-wrap");
+  if (wrap) wrap.dataset.tier = v.tier;
+  const droid = byId("calcDroid");
+  if (droid) droid.dataset.tier = v.tier;
+  const line = document.querySelector(".calc-droid-line");
+  if (line) line.textContent = DROID_LINES[v.tier];
+}
+/* Dragging the severity slider fires continuously; rebuilding the panel's innerHTML on
+ * every tick would recreate the <input> mid-drag and drop the pointer capture. This
+ * patches just the numbers that can change from severity alone. */
+function updateCalcNumbers() {
+  const v = computeVerdict();
+  renderQuickbar(v);
+  animateCalcTotal(v.total);
+  const banner = document.querySelector(".calc-banner");
+  if (banner) {
+    banner.className = `calc-banner tier-${v.tier}`;
+    const label = banner.querySelector(".calc-banner-label");
+    if (label) label.textContent = BANNER_LABEL[v.tier];
+    const meter = banner.querySelector(".calc-meter i");
+    if (meter) meter.style.width = `${Math.min(100, (v.total / BAN_MINUTES) * 100)}%`;
+  }
+  updateDroidReaction(v);
+  v.resolved.forEach(({ index, tier, minutes }) => {
+    if (!tier) return;
+    const timeEl = document.querySelector(`[data-time="${index}"]`);
+    if (timeEl) timeEl.textContent = tierBadge(tier, minutes);
+    const labelEl = document.querySelector(`[data-severity-label="${index}"]`);
+    if (labelEl) labelEl.textContent = `${minutes}m · ${severityLabel(tier, minutes)}`;
+  });
+}
+function renderChargeRow({ charge, index, tier, minutes }) {
+  if (!tier) return `<div class="calc-charge" style="--d:${Math.min(index * 40, 240)}ms"><div class="calc-charge-main"><span class="record-code">${escapeHtml(charge.code)}</span><span class="calc-charge-title">No sentencing data on file for this offense.</span><button type="button" class="calc-remove" data-remove="${index}" aria-label="Remove this charge">×</button></div></div>`;
+  const entry = PUNISHMENTS[charge.code];
+  const isRange = tierIsRange(tier);
+  const tierSelect = entry.tiers.length > 1 ? `<label class="calc-tier-select"><span>Offense count</span>
+    <select data-tier-select="${index}" aria-label="Which offense count is this?">${entry.tiers.map((t, i) => `<option value="${i}" ${i === charge.tierIndex ? "selected" : ""}>${escapeHtml(t.label)}</option>`).join("")}</select>
+  </label>` : "";
+  const severity = isRange ? `<div class="calc-severity">
+    <div class="calc-severity-head"><span>Severity</span><b data-severity-label="${index}">${minutes}m · ${severityLabel(tier, minutes)}</b></div>
+    <input type="range" min="${tier.minutes[0]}" max="${tier.minutes[1]}" step="1" value="${minutes}" data-severity="${index}" aria-label="Severity for this charge" />
+  </div>` : "";
+  const via = tier.viaLabel ? `<p class="calc-escalated">${escapeHtml(tier.viaLabel)}${tier.viaNote ? `: ${escapeHtml(tier.viaNote)}` : ""} — treated as ${escapeHtml(calcOffenseTitle(tier.sourceCode))} (${escapeHtml(tier.sourceCode)}).</p>` : "";
+  const note = !tier.viaLabel && tier.note ? `<p class="calc-tier-note">${escapeHtml(tier.note)}</p>` : "";
   return `<div class="calc-charge" style="--d:${Math.min(index * 40, 240)}ms">
     <div class="calc-charge-main">
-      <span class="record-code">${escapeHtml(resolved.sourceCode)}</span>
-      <span class="calc-charge-title">${escapeHtml(calcOffenseTitle(resolved.sourceCode))}</span>
-      <span class="calc-charge-time">${timeBadge(resolved)}</span>
+      <span class="record-code">${escapeHtml(charge.code)}</span>
+      <span class="calc-charge-title">${escapeHtml(calcOffenseTitle(charge.code))}</span>
+      <span class="calc-charge-time" data-time="${index}">${tierBadge(tier, minutes)}</span>
       <button type="button" class="calc-remove" data-remove="${index}" aria-label="Remove this charge">×</button>
     </div>
-    ${resolved.escalated ? `<p class="calc-escalated">${escapeHtml(resolved.escalated)}</p>` : ""}
-    ${forecast ? `<p class="calc-forecast">${escapeHtml(forecast)}</p>` : ""}
+    ${tierSelect}
+    ${severity}
+    ${via}${note}
   </div>`;
 }
 function calcPickerColumn(section, index) {
   const offenses = section.cards.filter((record) => record.code);
   return `<div class="calc-column">
     <div class="calc-column-head"><span class="fast-index">${roman(index + 1)}</span><h3>${escapeHtml(section.name)}</h3></div>
-    <div class="calc-offenses">${offenses.map((record) => `<button type="button" class="calc-offense" data-add="${escapeAttr(record.code)}">
+    <div class="calc-offenses">${offenses.map((record) => {
+      const entry = PUNISHMENTS[record.code];
+      const badge = entry ? tierRangeLabel(entry.tiers[0]) : "No data";
+      const summary = entry ? tierSummary(record.code) : "";
+      return `<button type="button" class="calc-offense" data-add="${escapeAttr(record.code)}">
       <span class="record-code">${escapeHtml(record.code)}</span>
       <span class="calc-offense-title">${escapeHtml(record.title)}</span>
-      <span class="calc-offense-time">${timeBadge(PUNISHMENTS[record.code])}</span>
-      ${offenseNote(record.code) ? `<span class="calc-offense-repeat">${escapeHtml(offenseNote(record.code))}</span>` : ""}
-    </button>`).join("")}</div>
+      <span class="calc-offense-time">${escapeHtml(badge)}</span>
+      ${summary ? `<span class="calc-offense-repeat">${escapeHtml(summary)}</span>` : ""}
+    </button>`;
+    }).join("")}</div>
   </div>`;
 }
 function renderQuickbar(v) {
   const bar = byId("calcQuickbar");
   if (!bar) return;
-  const totalLabel = v.totalMin === v.totalMax ? String(v.totalMax) : `${v.totalMin}–${v.totalMax}`;
   bar.innerHTML = `<a href="#calcVerdict" data-scroll class="calc-quickbar-inner tier-${v.tier}">
     <span class="calc-quickbar-label">${BANNER_LABEL[v.tier]}</span>
-    <span class="calc-quickbar-total">${totalLabel} <small>min</small></span>
-    <span class="calc-quickbar-meter"><i style="width:${Math.min(100, (v.totalMax / BAN_MINUTES) * 100)}%"></i></span>
+    <span class="calc-quickbar-total">${v.total} <small>min</small></span>
+    <span class="calc-quickbar-meter"><i style="width:${Math.min(100, (v.total / BAN_MINUTES) * 100)}%"></i></span>
   </a>`;
 }
 function renderCalcPanel() {
@@ -663,40 +757,47 @@ function renderCalcPanel() {
   if (!panel) return;
   const v = computeVerdict();
   renderQuickbar(v);
-  const totalLabel = v.totalMin === v.totalMax ? String(v.totalMax) : `${v.totalMin}–${v.totalMax}`;
   panel.innerHTML = `
     ${v.resolved.length ? `<button type="button" class="btn calc-clear" id="calcClear"><span aria-hidden="true">×</span> Clear all offenses</button>` : ""}
-    <div class="calc-droid-wrap" data-tier="${v.tier}">
-      <div class="calc-droid-stage">
-        <div class="calc-droid" id="calcDroid" data-tier="${v.tier}">
-          <div class="calc-droid-glow"></div>
-          <img src="/assets/inquisitor-droid-red-transparent.webp" alt="An Inquisition arrest droid" />
-          <i class="droid-scan" aria-hidden="true"></i>
-        </div>
-      </div>
-      <span class="calc-droid-status"><i aria-hidden="true"></i> Inquisition unit active</span>
-      <p class="calc-droid-line" aria-live="polite">${escapeHtml(DROID_LINES[v.tier])}</p>
-    </div>
     <div class="calc-banner tier-${v.tier}">
       <span class="calc-banner-label">${BANNER_LABEL[v.tier]}</span>
-      <div class="calc-total"><b id="calcTotalNum">${totalLabel}</b><span>minutes</span></div>
-      <div class="calc-meter"><i style="width:${Math.min(100, (v.totalMax / BAN_MINUTES) * 100)}%"></i></div>
+      <div class="calc-total"><b id="calcTotalNum">${v.total}</b><span>minutes</span></div>
+      <div class="calc-meter"><i style="width:${Math.min(100, (v.total / BAN_MINUTES) * 100)}%"></i></div>
     </div>
     ${v.flags.length ? `<ul class="calc-flags">${v.flags.map((flag) => `<li>${escapeHtml(flag)}</li>`).join("")}</ul>` : ""}
     <label class="calc-warrior"><input type="checkbox" id="calcWarriorToggle" ${calcState.warrior ? "checked" : ""} /><span>Offender holds Warrior rank or above</span></label>
     <div class="calc-stack" id="calcStack">${v.resolved.length ? v.resolved.map(renderChargeRow).join("") : `<p class="no-match">No charges stacked yet.</p>`}</div>
   `;
-  animateCalcTotal(v.totalMin, v.totalMax);
+  animateCalcTotal(v.total);
+  updateDroidReaction(v);
   byId("calcWarriorToggle").addEventListener("change", (event) => { calcState.warrior = event.target.checked; renderCalcPanel(); });
+  panel.querySelectorAll("[data-tier-select]").forEach((select) => {
+    select.addEventListener("change", (event) => setChargeTier(Number(select.dataset.tierSelect), Number(event.target.value)));
+  });
+  panel.querySelectorAll("[data-severity]").forEach((input) => {
+    input.addEventListener("input", (event) => setChargeSeverity(Number(input.dataset.severity), Number(event.target.value)));
+  });
 }
 function renderCalculator(options) {
   document.title = "Sentencing Calculator — TSO Doctrine";
   app.innerHTML = `<div class="page calc-page">
     <nav class="breadcrumb" aria-label="Breadcrumb"><a href="${link("/")}" data-link>Archive</a><span aria-hidden="true">◆</span><span>Sentencing Calculator</span></nav>
     <header class="calc-header">
-      <div class="eyebrow">The Inquisition</div>
-      <h1>Sentencing Calculator</h1>
-      <p>Stack every offense the individual committed and the sentence updates live. Times are the arresting Inquisitor's discretion within the listed range and may not exceed it — a total of ${BAN_MINUTES} minutes or more calls for a server ban.</p>
+      <div class="calc-header-text">
+        <div class="eyebrow">The Inquisition</div>
+        <h1>Sentencing Calculator</h1>
+        <p>Stack every offense the individual committed, pick which offense number each one is and how severe it was, and the sentence updates live — a total of ${BAN_MINUTES} minutes or more calls for a server ban.</p>
+      </div>
+      <div class="calc-droid-wrap" data-tier="empty">
+        <div class="calc-droid-stage">
+          <div class="calc-droid" id="calcDroid" data-tier="empty">
+            <div class="calc-droid-glow"></div>
+            <img src="/assets/inquisitor-droid-red-transparent.webp" alt="An Inquisition arrest droid" />
+            <i class="droid-scan" aria-hidden="true"></i>
+          </div>
+        </div>
+        <p class="calc-droid-line" aria-live="polite">${escapeHtml(DROID_LINES.empty)}</p>
+      </div>
     </header>
     <div class="calc-quickbar" id="calcQuickbar"></div>
     <div class="calc-layout">
