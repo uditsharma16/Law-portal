@@ -23,7 +23,7 @@ const fallback = {
 };
 
 const state = { board: null, signature: "", lastSync: 0, live: false, searchIndex: 0, searchMatches: [] };
-const calcState = { charges: [], warrior: false }; // charges: [{ code, tierIndex, severity }], in the order added
+const calcState = { charges: [], warrior: true }; // charges: [{ code, tierIndex, severity }], in the order added
 const app = document.getElementById("app");
 const byId = (id) => document.getElementById(id);
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
@@ -156,12 +156,6 @@ function tierRangeLabel(tier) {
   if (tier.minutes[0] === tier.minutes[1]) return `${tier.minutes[1]}m`;
   return `${tier.minutes[0]}–${tier.minutes[1]}m`;
 }
-function tierSummary(code) {
-  const entry = PUNISHMENTS[code];
-  if (!entry || entry.tiers.length < 2) return "";
-  return entry.tiers.map((tier) => `${tier.label}: ${tierRangeLabel(tier)}`).join(" · ");
-}
-
 /* ───────── Data + live sync ───────── */
 async function loadBoard() {
   if (PREVIEW) return prepareBoard({ ...PREVIEW.board, preview: true });
@@ -705,9 +699,16 @@ function renderChargeRow({ charge, index, tier, minutes }) {
   if (!tier) return `<div class="calc-charge" style="--d:${Math.min(index * 40, 240)}ms"><div class="calc-charge-main"><span class="record-code">${escapeHtml(charge.code)}</span><span class="calc-charge-title">No sentencing data on file for this offense.</span><button type="button" class="calc-remove" data-remove="${index}" aria-label="Remove this charge">×</button></div></div>`;
   const entry = PUNISHMENTS[charge.code];
   const isRange = tierIsRange(tier);
-  const tierSelect = entry.tiers.length > 1 ? `<label class="calc-tier-select"><span>Offense count</span>
-    <select data-tier-select="${index}" aria-label="Which offense count is this?">${entry.tiers.map((t, i) => `<option value="${i}" ${i === charge.tierIndex ? "selected" : ""}>${escapeHtml(t.label)}</option>`).join("")}</select>
-  </label>` : "";
+  const tierSelect = entry.tiers.length > 1 ? `<div class="calc-tier-picker" data-tier-picker="${index}">
+    <span class="calc-tier-picker-label">Offense count</span>
+    <button type="button" class="calc-tier-btn" data-tier-toggle="${index}" aria-haspopup="listbox" aria-expanded="false">
+      <span>${escapeHtml(entry.tiers[charge.tierIndex].label)}</span>
+      <svg class="calc-tier-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="calc-tier-options" data-tier-options="${index}" role="listbox" aria-label="Which offense count is this?">
+      ${entry.tiers.map((t, i) => `<button type="button" class="calc-tier-option${i === charge.tierIndex ? " active" : ""}" role="option" aria-selected="${i === charge.tierIndex}" data-tier-pick="${index}:${i}">${escapeHtml(t.label)}</button>`).join("")}
+    </div>
+  </div>` : "";
   const severity = isRange ? `<div class="calc-severity">
     <div class="calc-severity-head"><span>Severity</span><b data-severity-label="${index}">${minutes}m · ${severityLabel(tier, minutes)}</b></div>
     <input type="range" min="${tier.minutes[0]}" max="${tier.minutes[1]}" step="1" value="${minutes}" data-severity="${index}" aria-label="Severity for this charge" />
@@ -733,12 +734,10 @@ function calcPickerColumn(section, index) {
     <div class="calc-offenses">${offenses.map((record) => {
       const entry = PUNISHMENTS[record.code];
       const badge = entry ? tierRangeLabel(entry.tiers[0]) : "No data";
-      const summary = entry ? tierSummary(record.code) : "";
       return `<button type="button" class="calc-offense" data-add="${escapeAttr(record.code)}">
       <span class="record-code">${escapeHtml(record.code)}</span>
       <span class="calc-offense-title">${escapeHtml(record.title)}</span>
       <span class="calc-offense-time">${escapeHtml(badge)}</span>
-      ${summary ? `<span class="calc-offense-repeat">${escapeHtml(summary)}</span>` : ""}
     </button>`;
     }).join("")}</div>
   </div>`;
@@ -771,12 +770,32 @@ function renderCalcPanel() {
   animateCalcTotal(v.total);
   updateDroidReaction(v);
   byId("calcWarriorToggle").addEventListener("change", (event) => { calcState.warrior = event.target.checked; renderCalcPanel(); });
-  panel.querySelectorAll("[data-tier-select]").forEach((select) => {
-    select.addEventListener("change", (event) => setChargeTier(Number(select.dataset.tierSelect), Number(event.target.value)));
-  });
   panel.querySelectorAll("[data-severity]").forEach((input) => {
     input.addEventListener("input", (event) => setChargeSeverity(Number(input.dataset.severity), Number(event.target.value)));
   });
+}
+function renderReferenceTable() {
+  return offenseSections().map((section) => `
+    <h3>${escapeHtml(section.name)}</h3>
+    <div class="calc-ref-table-wrap"><table class="calc-ref-table">
+      <thead><tr><th>Code</th><th>Offense</th><th>1st</th><th>2nd</th><th>3rd/4th</th></tr></thead>
+      <tbody>${section.cards.filter((record) => record.code).map((record) => {
+        const entry = PUNISHMENTS[record.code];
+        const cell = (i) => entry && entry.tiers[i] ? escapeHtml(tierRangeLabel(entry.tiers[i])) : "—";
+        const rest = entry && entry.tiers.length > 2 ? entry.tiers.slice(2).map((t) => escapeHtml(tierRangeLabel(t))).join(" / ") : "—";
+        return `<tr><td><span class="record-code">${escapeHtml(record.code)}</span></td><td>${escapeHtml(record.title)}</td><td>${cell(0)}</td><td>${cell(1)}</td><td>${rest}</td></tr>`;
+      }).join("")}</tbody>
+    </table></div>
+  `).join("");
+}
+function openReference() {
+  closeMenus();
+  byId("refBody").innerHTML = renderReferenceTable();
+  byId("refPanel").hidden = false; document.body.style.overflow = "hidden";
+}
+function closeReference() {
+  if (byId("refPanel").hidden) return;
+  byId("refPanel").hidden = true; document.body.style.overflow = "";
 }
 function renderCalculator(options) {
   document.title = "Sentencing Calculator — TSO Doctrine";
@@ -787,6 +806,10 @@ function renderCalculator(options) {
         <div class="eyebrow">The Inquisition</div>
         <h1>Sentencing Calculator</h1>
         <p>Stack every offense the individual committed, pick which offense number each one is and how severe it was, and the sentence updates live — a total of ${BAN_MINUTES} minutes or more calls for a server ban.</p>
+        <button type="button" class="calc-ref-trigger" data-open-ref>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M9 9v11"/></svg>
+          <span>Reference table</span>
+        </button>
       </div>
       <div class="calc-droid-wrap" data-tier="empty">
         <div class="calc-droid-stage">
@@ -893,11 +916,28 @@ document.addEventListener("click", (event) => {
   const removeCharge_ = event.target.closest("[data-remove]");
   if (removeCharge_) { removeChargeAt(Number(removeCharge_.dataset.remove)); return; }
   if (event.target.closest("#calcClear")) { clearCharges(); return; }
+  const tierToggle = event.target.closest("[data-tier-toggle]");
+  if (tierToggle) {
+    const options = document.querySelector(`[data-tier-options="${tierToggle.dataset.tierToggle}"]`);
+    const open = options.classList.toggle("open");
+    tierToggle.setAttribute("aria-expanded", String(open));
+    document.querySelectorAll(".calc-tier-options.open").forEach((el) => {
+      if (el !== options) { el.classList.remove("open"); el.previousElementSibling.setAttribute("aria-expanded", "false"); }
+    });
+    return;
+  }
+  const tierPick = event.target.closest("[data-tier-pick]");
+  if (tierPick) { const [index, tierIndex] = tierPick.dataset.tierPick.split(":").map(Number); setChargeTier(index, tierIndex); return; }
+  if (event.target.closest("[data-open-ref]")) { openReference(); return; }
+  if (event.target.closest("#closeRef") || event.target === byId("refPanel")) { closeReference(); return; }
   const zoom = event.target.closest("[data-zoom]");
   if (zoom) { openLightbox(zoom.dataset.zoom, zoom.dataset.caption || ""); return; }
   if (event.target.closest("#lightbox")) { closeLightbox(); return; }
   if (event.target === byId("searchPanel")) { closeSearch(); return; }
   if (!event.target.closest(".sections-menu")) { byId("sectionsPopover").classList.remove("open"); byId("sectionsButton").setAttribute("aria-expanded", "false"); }
+  if (!event.target.closest(".calc-tier-picker")) {
+    document.querySelectorAll(".calc-tier-options.open").forEach((el) => { el.classList.remove("open"); el.previousElementSibling.setAttribute("aria-expanded", "false"); });
+  }
 });
 
 let revealObserver = null;
@@ -1122,7 +1162,7 @@ byId("globalSearch").addEventListener("keydown", (event) => {
 document.addEventListener("keydown", (event) => {
   const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || "");
   if ((event.key === "/" && !typing && !event.metaKey && !event.ctrlKey) || (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey))) { event.preventDefault(); openSearch(); }
-  if (event.key === "Escape") { closeLightbox(); closeSearch(); closeMenus(); }
+  if (event.key === "Escape") { closeLightbox(); closeSearch(); closeReference(); closeMenus(); }
 });
 window.addEventListener(PREVIEW ? "hashchange" : "popstate", () => route());
 createAtmosphere();
