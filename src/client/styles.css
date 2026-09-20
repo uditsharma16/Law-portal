@@ -386,8 +386,9 @@ figcaption { margin-top: .6rem; color: var(--faint); font: 400 .66rem var(--mono
 .ref-head h2 { margin: 0; font: 700 1.2rem var(--display); color: var(--paper); }
 .ref-head button { border: 1px solid var(--soft-line); background: none; color: var(--muted); font: 500 .65rem var(--mono); padding: .3rem .5rem; border-radius: 3px; text-transform: uppercase; letter-spacing: .08em; cursor: pointer; }
 .ref-head button:hover { color: #fff; border-color: var(--line); }
-.ref-body { min-height: 0; padding: 1.3rem; display: grid; gap: 2rem; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.ref-body { min-height: 0; padding: 1.3rem; display: block; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .ref-body h3 { margin: 0 0 .9rem; font: 700 1.05rem var(--display); color: var(--gold-light); }
+.ref-body h3:not(:first-child) { margin-top: 2rem; }
 .calc-ref-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .calc-ref-table { width: 100%; min-width: 34rem; border-collapse: collapse; font-size: .88rem; }
 .calc-ref-table th { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid var(--line); color: var(--gold); font: 600 .64rem var(--mono); letter-spacing: .1em; text-transform: uppercase; }
@@ -440,7 +441,8 @@ figcaption { margin-top: .6rem; color: var(--faint); font: 400 .66rem var(--mono
 .calc-warrior { display: flex; align-items: center; gap: .6rem; color: var(--muted); font-size: .85rem; cursor: pointer; }
 .calc-warrior input { width: 1.05rem; height: 1.05rem; accent-color: var(--red); }
 .calc-stack { display: grid; gap: .6rem; }
-.calc-charge { border: 1px solid var(--soft-line); background: rgba(255,255,255,.02); padding: .7rem .8rem; animation: charge-in .3s var(--ease) both; animation-delay: var(--d, 0ms); }
+.calc-charge { position: relative; z-index: 0; border: 1px solid var(--soft-line); background: rgba(255,255,255,.02); padding: .7rem .8rem; animation: charge-in .3s var(--ease) both; animation-delay: var(--d, 0ms); }
+.calc-charge.tier-menu-open { z-index: 20; }
 .calc-charge-main { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; }
 .calc-charge-title { flex: 1; min-width: 6rem; font: 500 .86rem var(--serif); color: var(--text); }
 .calc-charge-time { color: var(--gold-light); font: 500 .64rem var(--mono); letter-spacing: .05em; white-space: nowrap; }
@@ -455,7 +457,7 @@ figcaption { margin-top: .6rem; color: var(--faint); font: 400 .66rem var(--mono
 .calc-tier-btn[aria-expanded="true"] { border-color: var(--red-light); background: rgba(212,59,72,.06); }
 .calc-tier-caret { width: .7rem; flex: none; color: var(--faint); transition: transform .2s ease; }
 .calc-tier-btn[aria-expanded="true"] .calc-tier-caret { transform: rotate(180deg); }
-.calc-tier-options { position: absolute; left: 0; right: 0; top: calc(100% + .35rem); z-index: 10; display: none; border: 1px solid var(--line); background: rgba(14, 9, 11, .98); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 1rem 2.5rem rgba(0,0,0,.55); }
+.calc-tier-options { position: absolute; left: 0; right: 0; top: calc(100% + .35rem); z-index: 10; display: none; border: 1px solid var(--line); background: #0e090b; box-shadow: 0 1rem 2.5rem rgba(0,0,0,.72), 0 0 0 1px rgba(255,100,113,.06); }
 .calc-tier-options.open { display: block; animation: popover-in .2s var(--ease) both; }
 .calc-tier-option { display: block; width: 100%; border: 0; border-left: 2px solid transparent; background: none; color: var(--text); padding: .55rem .7rem; text-align: left; font: 400 .85rem var(--serif); cursor: pointer; transition: background .15s ease, border-color .15s ease, color .15s ease; }
 .calc-tier-option:hover { background: rgba(212,59,72,.1); border-left-color: var(--red-light); color: #fff; }

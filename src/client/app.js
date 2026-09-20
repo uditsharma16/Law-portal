@@ -928,8 +928,13 @@ document.addEventListener("click", (event) => {
     const options = document.querySelector(`[data-tier-options="${tierToggle.dataset.tierToggle}"]`);
     const open = options.classList.toggle("open");
     tierToggle.setAttribute("aria-expanded", String(open));
+    tierToggle.closest(".calc-charge")?.classList.toggle("tier-menu-open", open);
     document.querySelectorAll(".calc-tier-options.open").forEach((el) => {
-      if (el !== options) { el.classList.remove("open"); el.previousElementSibling.setAttribute("aria-expanded", "false"); }
+      if (el !== options) {
+        el.classList.remove("open");
+        el.previousElementSibling.setAttribute("aria-expanded", "false");
+        el.closest(".calc-charge")?.classList.remove("tier-menu-open");
+      }
     });
     return;
   }
@@ -943,7 +948,11 @@ document.addEventListener("click", (event) => {
   if (event.target === byId("searchPanel")) { closeSearch(); return; }
   if (!event.target.closest(".sections-menu")) { byId("sectionsPopover").classList.remove("open"); byId("sectionsButton").setAttribute("aria-expanded", "false"); }
   if (!event.target.closest(".calc-tier-picker")) {
-    document.querySelectorAll(".calc-tier-options.open").forEach((el) => { el.classList.remove("open"); el.previousElementSibling.setAttribute("aria-expanded", "false"); });
+    document.querySelectorAll(".calc-tier-options.open").forEach((el) => {
+      el.classList.remove("open");
+      el.previousElementSibling.setAttribute("aria-expanded", "false");
+      el.closest(".calc-charge")?.classList.remove("tier-menu-open");
+    });
   }
 });
 
