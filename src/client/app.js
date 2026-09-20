@@ -623,7 +623,16 @@ function defaultSeverity(code, tierIndex) {
   const tier = resolveTier(code, tierIndex);
   return tier && tierIsRange(tier) ? Math.round((tier.minutes[0] + tier.minutes[1]) / 2) : null;
 }
+function syncCalcPickerSelections() {
+  const selected = new Set(calcState.charges.map((charge) => charge.code));
+  document.querySelectorAll(".calc-offense[data-add]").forEach((button) => {
+    const isSelected = selected.has(button.dataset.add);
+    button.disabled = isSelected;
+    button.setAttribute("aria-pressed", String(isSelected));
+  });
+}
 function addCharge(code) {
+  if (calcState.charges.some((charge) => charge.code === code)) return;
   calcState.charges.push({ code, tierIndex: 0, severity: defaultSeverity(code, 0) });
   renderCalcPanel();
 }
@@ -732,12 +741,9 @@ function calcPickerColumn(section, index) {
   return `<div class="calc-column">
     <div class="calc-column-head"><span class="fast-index">${roman(index + 1)}</span><h3>${escapeHtml(section.name)}</h3></div>
     <div class="calc-offenses">${offenses.map((record) => {
-      const entry = PUNISHMENTS[record.code];
-      const badge = entry ? tierRangeLabel(entry.tiers[0]) : "No data";
-      return `<button type="button" class="calc-offense" data-add="${escapeAttr(record.code)}">
+      return `<button type="button" class="calc-offense" data-add="${escapeAttr(record.code)}" aria-pressed="false">
       <span class="record-code">${escapeHtml(record.code)}</span>
       <span class="calc-offense-title">${escapeHtml(record.title)}</span>
-      <span class="calc-offense-time">${escapeHtml(badge)}</span>
     </button>`;
     }).join("")}</div>
   </div>`;
@@ -769,6 +775,7 @@ function renderCalcPanel() {
   `;
   animateCalcTotal(v.total);
   updateDroidReaction(v);
+  syncCalcPickerSelections();
   byId("calcWarriorToggle").addEventListener("change", (event) => { calcState.warrior = event.target.checked; renderCalcPanel(); });
   panel.querySelectorAll("[data-severity]").forEach((input) => {
     input.addEventListener("input", (event) => setChargeSeverity(Number(input.dataset.severity), Number(event.target.value)));
