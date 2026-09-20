@@ -1,4 +1,4 @@
-const BOARD_SHORTLINK = "3sWISRBt";
+const BOARD_SHORTLINK = "9PiknbOc";
 const TRELLO_EXPORT = `https://trello.com/b/${BOARD_SHORTLINK}.json`;
 
 export default {
