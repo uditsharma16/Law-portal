@@ -105,6 +105,7 @@ const PUNISHMENTS = {
   "C-11": { tiers: [ { label: "Each offense", tag: "report", reportAlways: "Report to Inquisition High Command." } ] }
 };
 const BAN_MINUTES = 45; // "If the arrest times stack to 45 minutes, immediately request a server-ban."
+const SENTENCE_STEP_MINUTES = 5;
 /* The chosen tier for a charge, redirected to the target offense's first tier when the
  * tier itself is a "becomes" swap (a 3rd Disturbing the Peace really is a Minor
  * Toxicity charge, not a fourth kind of Disturbing the Peace). */
@@ -619,9 +620,13 @@ function computeVerdict() {
 }
 /* A freshly added charge starts at the first tier, with severity defaulted to the
  * middle of whatever range that (possibly redirected) tier turns out to be. */
+function snapSeverity(tier, minutes) {
+  const snapped = Math.round(minutes / SENTENCE_STEP_MINUTES) * SENTENCE_STEP_MINUTES;
+  return Math.max(tier.minutes[0], Math.min(tier.minutes[1], snapped));
+}
 function defaultSeverity(code, tierIndex) {
   const tier = resolveTier(code, tierIndex);
-  return tier && tierIsRange(tier) ? Math.round((tier.minutes[0] + tier.minutes[1]) / 2) : null;
+  return tier && tierIsRange(tier) ? snapSeverity(tier, (tier.minutes[0] + tier.minutes[1]) / 2) : null;
 }
 function syncCalcPickerSelections() {
   const selected = new Set(calcState.charges.map((charge) => charge.code));
@@ -648,7 +653,9 @@ function setChargeTier(index, tierIndex) {
 function setChargeSeverity(index, minutes) {
   const charge = calcState.charges[index];
   if (!charge) return;
-  charge.severity = minutes;
+  const tier = resolveTier(charge.code, charge.tierIndex);
+  if (!tier || !tierIsRange(tier)) return;
+  charge.severity = snapSeverity(tier, minutes);
   updateCalcNumbers(); // patch numbers in place — a full re-render would drop the slider mid-drag
 }
 function animateCalcTotal(target) {
@@ -720,7 +727,7 @@ function renderChargeRow({ charge, index, tier, minutes }) {
   </div>` : "";
   const severity = isRange ? `<div class="calc-severity">
     <div class="calc-severity-head"><span>Severity</span><b data-severity-label="${index}">${minutes}m · ${severityLabel(tier, minutes)}</b></div>
-    <input type="range" min="${tier.minutes[0]}" max="${tier.minutes[1]}" step="1" value="${minutes}" data-severity="${index}" aria-label="Severity for this charge" />
+    <input type="range" min="${tier.minutes[0]}" max="${tier.minutes[1]}" step="${SENTENCE_STEP_MINUTES}" value="${minutes}" data-severity="${index}" aria-label="Severity for this charge" />
   </div>` : "";
   const via = tier.viaLabel ? `<p class="calc-escalated">${escapeHtml(tier.viaLabel)}${tier.viaNote ? `: ${escapeHtml(tier.viaNote)}` : ""} — treated as ${escapeHtml(calcOffenseTitle(tier.sourceCode))} (${escapeHtml(tier.sourceCode)}).</p>` : "";
   const note = !tier.viaLabel && tier.note ? `<p class="calc-tier-note">${escapeHtml(tier.note)}</p>` : "";
