@@ -566,6 +566,11 @@ html.lite .hero-sigil, html.lite .calc-droid, html.lite .holo { transform: none;
 
 @media (max-width: 900px) {
   .sync-pill span { display: none; }
+  /* Between here and the mobile nav at 760px the header is tight: the bolt alone
+   * still reads as the lite switch, and the label would push it off the edge. */
+  .lite-toggle span { display: none; }
+  .lite-toggle { padding: .42rem .45rem; }
+  .main-nav { gap: 1.15rem; }
   .article-layout.has-contents { width: min(54rem, 100%); grid-template-columns: minmax(0, 1fr); }
   .article-aside { position: static; order: -1; padding: 1rem; border: 1px solid var(--soft-line); background: var(--panel); }
   .article-aside a::before { display: none; }
@@ -595,6 +600,7 @@ html.lite .hero-sigil, html.lite .calc-droid, html.lite .holo { transform: none;
   .sections-popover { position: static; width: 100%; margin-top: .6rem; box-shadow: none; }
   .search-trigger { justify-content: center; padding: .8rem; }
   .lite-toggle { justify-content: center; padding: .7rem; }
+  .lite-toggle span { display: inline; } /* the collapsed menu has room for the word again */
   .sync-pill span { display: inline; }
   .hero { grid-template-columns: minmax(0, 1fr); }
   .hero-sigil { order: -1; justify-self: center; max-width: 12rem; }
