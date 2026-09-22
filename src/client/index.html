@@ -7,30 +7,19 @@
   <meta name="description" content="The Sith Order doctrine archive." />
   <title>TSO — Sith Doctrine</title>
   <script>
-    /* Lite mode: a cheaper rendering of the same site for weak devices and slow
-       connections. A choice the visitor made themselves always wins; otherwise the
-       device's own hints decide here, and the frame-rate probe in app.js can still
-       switch it on later if the page turns out to struggle in practice. */
+    /* Effects mode, applied before the first paint so a remembered or forced choice
+       never flashes the full atmosphere first. Same decision app.js makes in
+       applyChosenFxMode(): ?fx=lite / ?fx=full force either mode for this tab, a pick
+       from the footer switch is remembered across visits, and the automatic verdict
+       from the frame-rate guard lasts for this tab only. Nothing is guessed from
+       device hints — everyone starts on the full version and it is measured. */
     (function () {
-      var saved = null;
-      try { saved = localStorage.getItem("tso-lite"); } catch (e) {}
-      var on;
-      if (saved === "on" || saved === "auto-on") on = true;
-      else if (saved === "off") on = false;
-      else {
-        var net = navigator.connection || {};
-        var score = 0;
-        if (net.saveData) score += 3;                                  // the visitor asked every site to be frugal
-        if (net.effectiveType === "2g" || net.effectiveType === "slow-2g") score += 3;
-        else if (net.effectiveType === "3g") score += 2;
-        if (navigator.deviceMemory <= 2) score += 3;                   // undefined fails both tests, which is the safe default
-        else if (navigator.deviceMemory <= 4) score += 1;
-        if (navigator.hardwareConcurrency <= 2) score += 2;
-        else if (navigator.hardwareConcurrency <= 4) score += 1;
-        if (matchMedia("(prefers-reduced-motion: reduce)").matches) score += 3;
-        on = score >= 3;
-      }
-      if (on) document.documentElement.classList.add("lite");
+      var mode = new URLSearchParams(location.search).get("fx");
+      try {
+        if (mode === "lite" || mode === "full") sessionStorage.setItem("tso-fx", mode);
+        else mode = localStorage.getItem("tso-fx-pref") || sessionStorage.getItem("tso-fx");
+      } catch (e) {}
+      if (mode === "lite") document.documentElement.classList.add("fx-lite");
     })();
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -69,10 +58,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
         <span>Search the archive</span><kbd>/</kbd>
       </button>
-      <button class="lite-toggle" id="liteToggle" role="switch" aria-checked="false" title="Lite mode">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4.5 13H11l-1 9 8.5-11H12l1-9Z"/></svg>
-        <span>Lite</span>
-      </button>
       <span class="sync-pill" id="syncPill" data-state="connecting" title="Content is pulled from the Order's Trello board"><i></i><span id="syncStatus">Connecting</span></span>
     </nav>
   </header>
@@ -98,6 +83,9 @@
 
   <footer class="site-footer">
     <span>TSO · Sith Doctrine Archive</span>
+    <button type="button" class="fx-toggle" id="fxToggle" role="switch" aria-checked="false" aria-label="Lite effects" title="Lite effects: calmer background animation for slower devices">
+      <span>Effects</span><span class="fx-toggle-track" aria-hidden="true"><i></i></span><span id="fxToggleState">Full</span>
+    </button>
     <span id="footerSync">Source: Trello</span>
   </footer>
 

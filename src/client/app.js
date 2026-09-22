@@ -29,70 +29,79 @@ const byId = (id) => document.getElementById(id);
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const LABEL_COLORS = { green: "#5fbf8a", yellow: "#e2c45a", orange: "#f0994a", red: "#ff6471", purple: "#b48cf2", blue: "#6aa5ff", sky: "#63cdf0", lime: "#a6d65c", pink: "#f58ac4", black: "#a79da0" };
 
-/* ───────── Lite mode ─────────
- * The same archive, rendered cheaply: no drifting embers, no blurred glows, no
- * perpetual animation, and a slower sync. Which device gets it is settled before the
- * first paint by the inline script in index.html; what is left here is the manual
- * switch, the frame-rate probe that catches devices the static hints misjudged, and
- * the single motionOff() answer that every decorative effect hangs off.
- * Stored values: "on"/"off" are the visitor's own choice and are never overridden;
- * "auto-on" is this code's guess, so it keeps re-deciding on later visits. */
-const LITE_KEY = "tso-lite";
-const LITE_POLL_MS = 180_000; // lite checks Trello a third as often, to spare data and battery
-const LITE_FPS_FLOOR = 38;
-const liteOn = () => document.documentElement.classList.contains("lite");
-function readLitePref() { try { return localStorage.getItem(LITE_KEY); } catch { return null; } }
-function writeLitePref(value) { try { localStorage.setItem(LITE_KEY, value); } catch {} }
-const liteChosen = () => ["on", "off"].includes(readLitePref());
+/* ───────── Lite effects ─────────
+ * The Hall of Records' performance guard, so both sites behave the same way. Everyone
+ * starts on the full version; shortly after the first page renders we sample real
+ * frame timing for ~1.5s of visible time, and only if the page is consistently choppy
+ * (median frame slower than 25fps, or a quarter of frames over 50ms) does it switch to
+ * a lighter mode for the rest of the tab session. The footer switch lets anyone pick
+ * either mode themselves; that choice is remembered across visits and always beats the
+ * automatic check. ?fx=lite / ?fx=full force either mode for the current tab.
+ * What lite drops here is this site's own costs — the ember canvas, the blurred glows,
+ * the backdrop filters and every looping animation (see html.fx-lite in the
+ * stylesheet). The layout, the type and the content are untouched. */
+const perf = { lite: false, decided: false };
+const FX_SESSION = "tso-fx";    // this tab only: the automatic verdict, or a ?fx= override
+const FX_PREF = "tso-fx-pref";  // the visitor's own pick from the footer switch
+const LITE_POLL_MS = 180_000;   // lite checks Trello a third as often, to spare data and battery
+const liteOn = () => document.documentElement.classList.contains("fx-lite");
 /* Everything decorative asks this, not the media query directly, so "the visitor wants
  * less motion" and "this device cannot afford motion" stay one decision. */
 function motionOff() { return reducedMotion.matches || liteOn(); }
-function setLite(on, source = "user") {
-  document.documentElement.classList.toggle("lite", on);
-  writeLitePref(on ? (source === "auto" ? "auto-on" : "on") : "off");
-  syncLiteToggle();
+function setFxMode(lite) {
+  perf.lite = lite;
+  document.documentElement.classList.toggle("fx-lite", lite);
+  byId("fxToggle").setAttribute("aria-checked", String(lite));
+  byId("fxToggleState").textContent = lite ? "Lite" : "Full";
   applyAtmosphere();
-  if (on) app.querySelectorAll("[data-reveal]").forEach((item) => item.classList.add("in"));
+  if (lite) app.querySelectorAll("[data-reveal]").forEach((item) => item.classList.add("in"));
   else bindMotion(app); // the pointer tilt was never bound while lite was on
 }
-function syncLiteToggle() {
-  const button = byId("liteToggle");
-  if (!button) return;
-  const on = liteOn();
-  button.setAttribute("aria-checked", String(on));
-  button.title = on ? "Lite mode is on — tap for the full experience" : "Tap for lite mode: a lighter, faster page";
+function autoSwitchToLite() {
+  perf.decided = true;
+  setFxMode(true);
+  try { sessionStorage.setItem(FX_SESSION, "lite"); } catch {}
+  toast("Lighter effects on for smoother performance — switch back in the footer");
 }
-/* Device hints are only a guess: plenty of phones report healthy memory and still
- * cannot paint the embers. So measure real frames once, shortly after the first
- * render, and drop to lite if the page is genuinely struggling. Never runs when the
- * visitor has already chosen, and never while the tab is hidden — a backgrounded tab
- * throttles requestAnimationFrame to a crawl, which would look exactly like a slow
- * device. */
-const PROBE_MS = 1600;
-const PROBE_MIN_FRAMES = 10;
-/* The verdict, kept apart from the measuring so it can be reasoned about on its own.
- * Too few frames means the loop was throttled rather than slow — even a struggling
- * device manages well over ten in a second and a half — so that sample is discarded. */
-function liteVerdict(frames, elapsed) {
-  if (frames < PROBE_MIN_FRAMES || elapsed <= 0) return false;
-  return (frames / elapsed) * 1000 < LITE_FPS_FLOOR;
+/* Runs at boot, before anything animates, so a remembered or forced choice applies
+ * immediately rather than after another round of lag. The inline script in index.html
+ * has already put the class on; this settles the switch and the bookkeeping. */
+function applyChosenFxMode() {
+  let mode = new URLSearchParams(location.search).get("fx");
+  try {
+    if (mode === "lite" || mode === "full") sessionStorage.setItem(FX_SESSION, mode);
+    else mode = localStorage.getItem(FX_PREF) || sessionStorage.getItem(FX_SESSION);
+  } catch {}
+  if (mode !== "lite" && mode !== "full") return;
+  perf.decided = true;
+  setFxMode(mode === "lite");
 }
-function probePerformance() {
-  if (liteChosen() || liteOn() || document.hidden) return;
-  const began = performance.now();
-  let frames = 0, aborted = false;
-  const abort = () => { aborted = true; };
-  const done = () => document.removeEventListener("visibilitychange", abort);
-  document.addEventListener("visibilitychange", abort);
+function toggleFxMode() {
+  const lite = !perf.lite;
+  perf.decided = true; // a measurement still in flight must not overrule the visitor
+  setFxMode(lite);
+  try { localStorage.setItem(FX_PREF, lite ? "lite" : "full"); } catch {}
+}
+function framesAreChoppy(samples) {
+  if (samples.length < 3) return false;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const slowShare = samples.filter((ms) => ms > 50).length / samples.length;
+  return median > 40 || slowShare >= .25;
+}
+function watchFrameRate() {
+  if (perf.decided) return;
+  const samples = [];
+  let last = 0, measured = 0;
+  // rAF pauses in a background tab; drop the gap so returning can't look like one enormous frame.
+  const forgetGap = () => { last = 0; };
+  document.addEventListener("visibilitychange", forgetGap);
   const tick = (now) => {
-    if (aborted || liteOn() || liteChosen()) { done(); return; }
-    frames += 1;
-    const elapsed = now - began;
-    if (elapsed < PROBE_MS) { requestAnimationFrame(tick); return; }
-    done();
-    if (!liteVerdict(frames, elapsed)) return;
-    setLite(true, "auto");
-    toast("Lite mode on — this device was struggling. Switch back in the header.");
+    if (last) { samples.push(now - last); measured += now - last; }
+    last = now;
+    if (measured < 1500) { requestAnimationFrame(tick); return; }
+    document.removeEventListener("visibilitychange", forgetGap);
+    if (!perf.decided && framesAreChoppy(samples)) autoSwitchToLite();
   };
   requestAnimationFrame(tick);
 }
@@ -294,7 +303,7 @@ async function start() {
     document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - state.lastSync > 20_000) refresh(); });
   }
   setInterval(updateSyncLabel, 10_000);
-  setTimeout(probePerformance, 900); // let the first render settle before judging it
+  setTimeout(watchFrameRate, 800); // let the first render and its entrance animations settle
 }
 
 async function refresh() {
@@ -1269,12 +1278,8 @@ document.addEventListener("keydown", (event) => {
   if ((event.key === "/" && !typing && !event.metaKey && !event.ctrlKey) || (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey))) { event.preventDefault(); openSearch(); }
   if (event.key === "Escape") { closeLightbox(); closeSearch(); closeReference(); closeMenus(); }
 });
-byId("liteToggle").addEventListener("click", () => {
-  const on = !liteOn();
-  setLite(on);
-  toast(on ? "Lite mode on — heavy effects off." : "Full experience restored.");
-});
+byId("fxToggle").addEventListener("click", toggleFxMode);
 window.addEventListener(PREVIEW ? "hashchange" : "popstate", () => route());
-syncLiteToggle();
+applyChosenFxMode();
 applyAtmosphere();
 start();
