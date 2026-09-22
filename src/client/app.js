@@ -29,6 +29,74 @@ const byId = (id) => document.getElementById(id);
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const LABEL_COLORS = { green: "#5fbf8a", yellow: "#e2c45a", orange: "#f0994a", red: "#ff6471", purple: "#b48cf2", blue: "#6aa5ff", sky: "#63cdf0", lime: "#a6d65c", pink: "#f58ac4", black: "#a79da0" };
 
+/* ───────── Lite mode ─────────
+ * The same archive, rendered cheaply: no drifting embers, no blurred glows, no
+ * perpetual animation, and a slower sync. Which device gets it is settled before the
+ * first paint by the inline script in index.html; what is left here is the manual
+ * switch, the frame-rate probe that catches devices the static hints misjudged, and
+ * the single motionOff() answer that every decorative effect hangs off.
+ * Stored values: "on"/"off" are the visitor's own choice and are never overridden;
+ * "auto-on" is this code's guess, so it keeps re-deciding on later visits. */
+const LITE_KEY = "tso-lite";
+const LITE_POLL_MS = 180_000; // lite checks Trello a third as often, to spare data and battery
+const LITE_FPS_FLOOR = 38;
+const liteOn = () => document.documentElement.classList.contains("lite");
+function readLitePref() { try { return localStorage.getItem(LITE_KEY); } catch { return null; } }
+function writeLitePref(value) { try { localStorage.setItem(LITE_KEY, value); } catch {} }
+const liteChosen = () => ["on", "off"].includes(readLitePref());
+/* Everything decorative asks this, not the media query directly, so "the visitor wants
+ * less motion" and "this device cannot afford motion" stay one decision. */
+function motionOff() { return reducedMotion.matches || liteOn(); }
+function setLite(on, source = "user") {
+  document.documentElement.classList.toggle("lite", on);
+  writeLitePref(on ? (source === "auto" ? "auto-on" : "on") : "off");
+  syncLiteToggle();
+  applyAtmosphere();
+  if (on) app.querySelectorAll("[data-reveal]").forEach((item) => item.classList.add("in"));
+  else bindMotion(app); // the pointer tilt was never bound while lite was on
+}
+function syncLiteToggle() {
+  const button = byId("liteToggle");
+  if (!button) return;
+  const on = liteOn();
+  button.setAttribute("aria-checked", String(on));
+  button.title = on ? "Lite mode is on — tap for the full experience" : "Tap for lite mode: a lighter, faster page";
+}
+/* Device hints are only a guess: plenty of phones report healthy memory and still
+ * cannot paint the embers. So measure real frames once, shortly after the first
+ * render, and drop to lite if the page is genuinely struggling. Never runs when the
+ * visitor has already chosen, and never while the tab is hidden — a backgrounded tab
+ * throttles requestAnimationFrame to a crawl, which would look exactly like a slow
+ * device. */
+const PROBE_MS = 1600;
+const PROBE_MIN_FRAMES = 10;
+/* The verdict, kept apart from the measuring so it can be reasoned about on its own.
+ * Too few frames means the loop was throttled rather than slow — even a struggling
+ * device manages well over ten in a second and a half — so that sample is discarded. */
+function liteVerdict(frames, elapsed) {
+  if (frames < PROBE_MIN_FRAMES || elapsed <= 0) return false;
+  return (frames / elapsed) * 1000 < LITE_FPS_FLOOR;
+}
+function probePerformance() {
+  if (liteChosen() || liteOn() || document.hidden) return;
+  const began = performance.now();
+  let frames = 0, aborted = false;
+  const abort = () => { aborted = true; };
+  const done = () => document.removeEventListener("visibilitychange", abort);
+  document.addEventListener("visibilitychange", abort);
+  const tick = (now) => {
+    if (aborted || liteOn() || liteChosen()) { done(); return; }
+    frames += 1;
+    const elapsed = now - began;
+    if (elapsed < PROBE_MS) { requestAnimationFrame(tick); return; }
+    done();
+    if (!liteVerdict(frames, elapsed)) return;
+    setLite(true, "auto");
+    toast("Lite mode on — this device was struggling. Switch back in the header.");
+  };
+  requestAnimationFrame(tick);
+}
+
 /* ───────── Sentencing data ─────────
  * From the "Arrest Times and Punishments" spreadsheet (source: The Inquisition |
  * Arrest Times and Protocols, last updated 06/04/2026). Each offense is a list of
@@ -226,10 +294,12 @@ async function start() {
     document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - state.lastSync > 20_000) refresh(); });
   }
   setInterval(updateSyncLabel, 10_000);
+  setTimeout(probePerformance, 900); // let the first render settle before judging it
 }
 
 async function refresh() {
   if (document.hidden) return;
+  if (liteOn() && Date.now() - state.lastSync < LITE_POLL_MS) return;
   try {
     const next = await loadBoard();
     const signature = signatureOf(next);
@@ -335,7 +405,7 @@ function route(options = {}) {
     }
     renderNotFound();
   };
-  if (document.startViewTransition && !reducedMotion.matches && !options.instant && !document.hidden) {
+  if (document.startViewTransition && !motionOff() && !options.instant && !document.hidden) {
     const transition = document.startViewTransition(render);
     transition.ready.catch(() => {}); transition.finished.catch(() => {}); // a skipped transition still renders
   } else render();
@@ -663,7 +733,7 @@ function animateCalcTotal(target) {
   if (!el) return;
   const from = Number(el.dataset.shown ?? target);
   el.dataset.shown = String(target); // correct immediately; the tween below is cosmetic only
-  if (reducedMotion.matches || from === target) { el.textContent = String(target); return; }
+  if (motionOff() || from === target) { el.textContent = String(target); return; }
   const began = performance.now(); const duration = 500;
   const token = (animateCalcTotal.token = (animateCalcTotal.token || 0) + 1);
   const tick = (now) => {
@@ -923,7 +993,7 @@ document.addEventListener("click", (event) => {
     navigate(anchor.getAttribute("href")); return;
   }
   const scroller = event.target.closest("a[data-scroll]");
-  if (scroller) { event.preventDefault(); byId(scroller.getAttribute("href").slice(1))?.scrollIntoView({ behavior: reducedMotion.matches ? "auto" : "smooth", block: "start" }); return; }
+  if (scroller) { event.preventDefault(); byId(scroller.getAttribute("href").slice(1))?.scrollIntoView({ behavior: motionOff() ? "auto" : "smooth", block: "start" }); return; }
   if (event.target.closest("[data-open-search]")) { openSearch(); return; }
   const addCharge_ = event.target.closest("[data-add]");
   if (addCharge_) { addCharge(addCharge_.dataset.add); return; }
@@ -966,7 +1036,7 @@ document.addEventListener("click", (event) => {
 let revealObserver = null;
 function observeReveals(root) {
   const items = root.querySelectorAll("[data-reveal]");
-  if (!("IntersectionObserver" in window) || reducedMotion.matches) { items.forEach((item) => item.classList.add("in")); return; }
+  if (!("IntersectionObserver" in window) || motionOff()) { items.forEach((item) => item.classList.add("in")); return; }
   document.documentElement.classList.add("reveal-ready");
   revealObserver?.disconnect();
   revealObserver = new IntersectionObserver((entries) => entries.forEach((entry) => { if (entry.isIntersecting) { entry.target.classList.add("in"); revealObserver.unobserve(entry.target); } }), { rootMargin: "0px 0px -6% 0px" });
@@ -987,7 +1057,7 @@ function spyHeadings() {
 }
 
 function bindMotion(root) {
-  if (reducedMotion.matches || !matchMedia("(hover: hover)").matches) return;
+  if (motionOff() || !matchMedia("(hover: hover)").matches) return;
   root.querySelectorAll(".holo").forEach((tile) => {
     tile.addEventListener("pointermove", (event) => {
       const box = tile.getBoundingClientRect();
@@ -999,11 +1069,18 @@ function bindMotion(root) {
   });
 }
 
+let atmosphere = null;
+/* Called at boot and on every lite toggle: starts the embers, resumes them, or stops
+ * and clears them, whichever the current setting calls for. */
+function applyAtmosphere() {
+  if (motionOff()) { atmosphere?.stop(); return; }
+  if (atmosphere) atmosphere.resume(); else createAtmosphere();
+}
 function createAtmosphere() {
-  if (reducedMotion.matches) return;
+  if (motionOff()) return;
   let frame = 0;
   window.addEventListener("pointermove", (event) => {
-    if (frame) return;
+    if (frame || motionOff()) return;
     frame = requestAnimationFrame(() => {
       const root = document.documentElement.style;
       root.setProperty("--pointer-x", `${event.clientX}px`); root.setProperty("--pointer-y", `${event.clientY}px`);
@@ -1028,6 +1105,7 @@ function createAtmosphere() {
   };
   const draw = () => {
     if (!running) return;
+    if (motionOff()) { running = false; context.clearRect(0, 0, width, height); return; }
     if (document.documentElement.classList.contains("board-open")) { requestAnimationFrame(draw); return; }
     context.clearRect(0, 0, width, height);
     context.globalCompositeOperation = "lighter";
@@ -1044,11 +1122,15 @@ function createAtmosphere() {
   };
   resize(); draw();
   window.addEventListener("resize", resize, { passive: true });
-  document.addEventListener("visibilitychange", () => { const wasRunning = running; running = !document.hidden; if (running && !wasRunning) draw(); });
+  document.addEventListener("visibilitychange", () => { const wasRunning = running; running = !document.hidden && !motionOff(); if (running && !wasRunning) draw(); });
+  atmosphere = {
+    stop() { running = false; context.clearRect(0, 0, width, height); },
+    resume() { if (running) return; running = true; resize(); draw(); }
+  };
 }
 
 document.addEventListener("pointerdown", (event) => {
-  if (reducedMotion.matches || event.button !== 0) return;
+  if (motionOff() || event.button !== 0) return;
   const target = event.target.closest(".btn, .search-trigger, .holo, a.record-row, .attachment-links a, .next-record a");
   if (!target) return;
   target.classList.add("ripple-host");
@@ -1187,6 +1269,12 @@ document.addEventListener("keydown", (event) => {
   if ((event.key === "/" && !typing && !event.metaKey && !event.ctrlKey) || (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey))) { event.preventDefault(); openSearch(); }
   if (event.key === "Escape") { closeLightbox(); closeSearch(); closeReference(); closeMenus(); }
 });
+byId("liteToggle").addEventListener("click", () => {
+  const on = !liteOn();
+  setLite(on);
+  toast(on ? "Lite mode on — heavy effects off." : "Full experience restored.");
+});
 window.addEventListener(PREVIEW ? "hashchange" : "popstate", () => route());
-createAtmosphere();
+syncLiteToggle();
+applyAtmosphere();
 start();

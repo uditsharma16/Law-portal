@@ -112,6 +112,10 @@ html.board-open, html.board-open body { overflow: hidden; }
 .sync-pill[data-state="live"] i::after { content: ""; position: absolute; inset: -.3rem; border-radius: 50%; border: 1px solid #ff5869; animation: ping 2.2s ease-out infinite; }
 .sync-pill[data-state="preview"] i { background: var(--gold); }
 .sync-pill[data-state="offline"] i { background: #7a6a6e; }
+.lite-toggle { display: inline-flex; align-items: center; gap: .45rem; border: 1px solid var(--soft-line); background: none; padding: .42rem .6rem; border-radius: 3px; color: var(--faint); font: 500 .66rem var(--mono); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; transition: color .2s ease, border-color .2s ease, background .2s ease; }
+.lite-toggle svg { width: .8rem; height: .8rem; fill: currentColor; stroke: none; }
+.lite-toggle:hover { color: var(--muted); border-color: var(--line); }
+.lite-toggle[aria-checked="true"] { color: var(--gold-light); border-color: rgba(212,173,104,.5); background: rgba(212,173,104,.1); }
 .menu-toggle { display: none; width: 2.6rem; height: 2.6rem; border: 1px solid var(--soft-line); background: none; border-radius: 3px; position: relative; }
 .menu-toggle i { position: absolute; left: .7rem; right: .7rem; height: 1px; background: var(--paper); transition: transform .3s var(--ease), top .3s var(--ease); }
 .menu-toggle i:first-child { top: 1.05rem; } .menu-toggle i:last-child { top: 1.5rem; }
@@ -526,6 +530,40 @@ figcaption { margin-top: .6rem; color: var(--faint); font: 400 .66rem var(--mono
 @keyframes vt-out { to { opacity: 0; transform: translateY(-.6rem); filter: blur(4px); } }
 @keyframes vt-in { from { opacity: 0; transform: translateY(1rem); } }
 
+/* ───────── Lite mode ─────────
+ * For weak devices, slow connections and anyone who asks for it. The canvas embers,
+ * the blurred glows, the backdrop filters and every looping animation are the whole
+ * cost of this page, so lite drops exactly those and nothing else. */
+html.lite { scroll-behavior: auto; }
+html.lite body { background: linear-gradient(170deg, #0b0709 0%, #12090d 52%, #070506 100%); background-attachment: fixed; }
+html.lite .scene, html.lite .ticker { display: none; } /* the embers canvas and the marquee both run forever */
+html.lite *, html.lite *::before, html.lite *::after { animation: none !important; will-change: auto !important; }
+html.lite .hero-sigil .tri { stroke-dashoffset: 0; } /* it was the draw-on animation that revealed it */
+
+/* Backdrop blur is the single most expensive effect here; opaque panels read the same. */
+html.lite .site-header.scrolled, html.lite .sections-popover, html.lite .search-panel,
+html.lite .ref-panel, html.lite .lightbox, html.lite .calc-tier-options,
+html.lite .calc-quickbar-inner { -webkit-backdrop-filter: none; backdrop-filter: none; }
+html.lite .site-header.scrolled, html.lite .calc-quickbar-inner { background: #0d080a; }
+html.lite .sections-popover, html.lite .calc-tier-options { background: #14090b; }
+html.lite .search-panel, html.lite .ref-panel { background: #070405; }
+html.lite .lightbox { background: #050303; }
+
+/* Glows: drop shadows and soft box shadows repainted on every scroll and hover. */
+html.lite .brand svg, html.lite .hero-sigil svg, html.lite .loader-sigil,
+html.lite .calc-droid img, html.lite .hero-title span:nth-child(2) { filter: none; }
+html.lite .hero-sigil::before, html.lite .hero-media::before,
+html.lite .calc-droid-glow, html.lite .droid-scan { display: none; }
+html.lite .search-frame, html.lite .ref-frame, html.lite .lightbox img, html.lite .toast,
+html.lite .sections-popover, html.lite .calc-tier-options, html.lite .reading-progress,
+html.lite .calc-banner, html.lite .holo:hover, html.lite .sync-pill[data-state="live"] i { box-shadow: none; }
+html.lite .search-trigger:hover { box-shadow: none; transform: none; }
+html.lite .holo:hover h2 { text-shadow: none; }
+
+/* 3D transforms exist only to feel alive; without the pointer tracking they are
+ * identity anyway, but they still force a compositing layer per card. */
+html.lite .hero-sigil, html.lite .calc-droid, html.lite .holo { transform: none; }
+
 @media (max-width: 900px) {
   .sync-pill span { display: none; }
   .article-layout.has-contents { width: min(54rem, 100%); grid-template-columns: minmax(0, 1fr); }
@@ -556,6 +594,7 @@ figcaption { margin-top: .6rem; color: var(--faint); font: 400 .66rem var(--mono
   .sections-menu > button { width: 100%; text-align: left; }
   .sections-popover { position: static; width: 100%; margin-top: .6rem; box-shadow: none; }
   .search-trigger { justify-content: center; padding: .8rem; }
+  .lite-toggle { justify-content: center; padding: .7rem; }
   .sync-pill span { display: inline; }
   .hero { grid-template-columns: minmax(0, 1fr); }
   .hero-sigil { order: -1; justify-self: center; max-width: 12rem; }
