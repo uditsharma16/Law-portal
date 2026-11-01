@@ -272,6 +272,8 @@ function stripTitleLine(description, titles) {
   const lines = description.split("\n");
   const first = lines.findIndex((line) => line.trim());
   if (first < 0) return "";
+  const level = (lines[first].trim().match(/^(#{1,6})\s/) || [])[1];
+  if (level && lines.slice(first + 1).some((line) => line.trim().startsWith(level + " "))) return description; // a section heading, not a title
   const heading = lines[first].trim().replace(/^#{1,6}\s*/, "").replace(/^>\s*/, "").replace(/^\*\*(.+)\*\*$/, "$1").replace(/^__(.+)__$/, "$1").trim();
   const wanted = titles.map(normalise);
   if (heading && wanted.includes(normalise(heading))) return lines.slice(first + 1).join("\n").trim();
@@ -1186,7 +1188,7 @@ function markdown(source = "", context = {}) {
     const quoted = line.match(/^>\s?(.*)$/);
     if (quoted) { flushParagraph(); closeList(); (quote ||= []).push(quoted[1]); continue; }
     if (quote) flushQuote();
-    if (!line) { flushParagraph(); closeList(); continue; }
+    if (!line) { flushParagraph(); continue; } // a blank line between items keeps the list going
     if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)) { flushAll(); out.push("<hr>"); continue; }
     const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*$/);
     if (heading) { flushAll(); const level = Math.min(3, Math.max(2, heading[1].length)); const text = stripMarkdown(heading[2]); out.push(`<h${level} id="${slug(text)}">${inline(heading[2])}</h${level}>`); continue; }
@@ -1196,8 +1198,8 @@ function markdown(source = "", context = {}) {
     if (clause) { flushAll(); out.push(`<p class="clause">${inline(clause[1])}</p>`); continue; }
     const bullet = line.match(/^[-*+]\s+(.+)$/);
     if (bullet) { flushParagraph(); flushQuote(); if (list !== "ul") { closeList(); list = "ul"; out.push("<ul>"); } out.push(`<li>${inline(bullet[1])}</li>`); continue; }
-    const number = line.match(/^\d+[.)]\s+(.+)$/);
-    if (number) { flushParagraph(); flushQuote(); if (list !== "ol") { closeList(); list = "ol"; out.push("<ol>"); } out.push(`<li>${inline(number[1])}</li>`); continue; }
+    const number = line.match(/^(\d+)[.)]\s+(.+)$/);
+    if (number) { flushParagraph(); flushQuote(); if (list !== "ol") { closeList(); list = "ol"; out.push(Number(number[1]) > 1 ? `<ol start="${Number(number[1])}">` : "<ol>"); } out.push(`<li>${inline(number[2])}</li>`); continue; }
     closeList(); paragraph.push(line);
   }
   flushAll();
@@ -1222,18 +1224,22 @@ function inline(value = "") {
   text = text.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_, label, url) => keep(anchor(url, label)));
   text = text.replace(/(^|[\s(])((?:https?:\/\/)[^\s<>)]+)/g, (_, lead, url) => `${lead}${keep(anchor(url, url))}`);
   text = escapeHtml(text);
+  text = emphasis(text);
+  return text.replace(/\u0000(\d+)\u0000/g, (_, index) => tokens[Number(index)]);
+}
+/* Bold, italic and strikethrough, applied to text that is already HTML-escaped. */
+function emphasis(text) {
   text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/__(.+?)__/g, "<strong>$1</strong>");
   text = text.replace(/(^|[^\w*])\*(?!\s)([^*]+?)\*(?!\w)/g, "$1<em>$2</em>").replace(/(^|[^\w_])_(?!\s)([^_]+?)_(?!\w)/g, "$1<em>$2</em>");
-  text = text.replace(/~~(.+?)~~/g, "<s>$1</s>");
-  return text.replace(/\u0000(\d+)\u0000/g, (_, index) => tokens[Number(index)]);
+  return text.replace(/~~(.+?)~~/g, "<s>$1</s>");
 }
 function anchor(url, label) {
   const href = safeUrl(url);
-  if (href === "#") return escapeHtml(label);
+  if (href === "#") return emphasis(escapeHtml(label));
   const bare = label.trim() === url.trim();
   let text = label;
   if (bare) { try { const parsed = new URL(url); text = parsed.hostname.replace(/^www\./, "") + (parsed.pathname.length > 1 ? parsed.pathname.replace(/\/+$/, "").split("/").slice(0, 3).join("/") + (parsed.pathname.split("/").length > 4 ? "/…" : "") : ""); } catch { text = url; } }
-  return `<a href="${href}" target="_blank" rel="noopener"${bare ? ' class="bare-link"' : ""}>${escapeHtml(text)}${bare ? " ↗" : ""}</a>`;
+  return `<a href="${href}" target="_blank" rel="noopener"${bare ? ' class="bare-link"' : ""}>${bare ? escapeHtml(text) : emphasis(escapeHtml(text))}${bare ? " ↗" : ""}</a>`;
 }
 function extractHeadings(source = "") {
   return cleanText(source).split("\n").map((line) => line.trim().match(/^(#{1,6})\s+(.+?)\s*#*$/)).filter(Boolean).map((match) => {
