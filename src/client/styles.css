@@ -302,6 +302,9 @@ figcaption { margin-top: .6rem; color: var(--faint); font: 400 .66rem var(--mono
 .prose .example { position: relative; margin: .2rem 0 1.4rem; padding: .95rem 1.2rem .95rem 1.3rem; border: 1px solid rgba(212,173,104,.22); border-left: 2px solid var(--gold); background: linear-gradient(90deg, rgba(212,173,104,.09), rgba(212,173,104,.02) 70%); color: #d8c8b6; font-size: .97em; line-height: 1.65; }
 .prose .example::before { content: "For example"; display: block; margin-bottom: .3rem; color: var(--gold); font: 500 .62rem var(--mono); letter-spacing: .2em; text-transform: uppercase; }
 .prose blockquote .example { margin-top: .6rem; }
+.prose .clause { display: flex; align-items: center; gap: .8rem; margin: 2.2rem 0 .6rem; color: var(--gold); font: 500 .74rem var(--mono); letter-spacing: .22em; text-transform: uppercase; line-height: 1.4; }
+.prose > .clause:first-child { margin-top: 0; }
+.prose .clause::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(212,173,104,.4), transparent); }
 .prose .notice { padding: 1.6rem 1.4rem; border: 1px dashed rgba(255,240,235,.18); color: var(--muted); text-align: center; font-style: italic; }
 .prose figure { margin: 1.8rem 0; }
 .prose figure img { width: 100%; max-height: 32rem; object-fit: contain; }

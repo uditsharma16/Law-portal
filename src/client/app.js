@@ -1163,8 +1163,11 @@ window.addEventListener("scroll", updateProgress, { passive: true });
  * headings, paragraphs (single newlines become line breaks, as on Trello), bullet and
  * numbered lists, multi-line blockquotes (a bare ">" is a paragraph break inside the
  * quote), horizontal rules, inline images and links, bold, italic and code.
- * A line that is nothing but a code span is treated as a worked example. */
+ * A line that is nothing but a code span naming a clause, article or section
+ * (`Clause VII.`) is a clause heading, whether or not a blank line follows it. Any
+ * other line that is nothing but a code span, standing alone, is a worked example. */
 const IMAGE_LINE = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/;
+const CLAUSE_LINE = /^`((?:clause|article|section)\s+[^`]+)`$/i;
 function markdown(source = "", context = {}) {
   const lines = cleanText(source).split("\n");
   const out = [];
@@ -1189,6 +1192,8 @@ function markdown(source = "", context = {}) {
     if (heading) { flushAll(); const level = Math.min(3, Math.max(2, heading[1].length)); const text = stripMarkdown(heading[2]); out.push(`<h${level} id="${slug(text)}">${inline(heading[2])}</h${level}>`); continue; }
     const image = line.match(IMAGE_LINE);
     if (image) { flushAll(); const html = figureFor(image[2], image[1], context); if (html) out.push(html); continue; }
+    const clause = line.match(CLAUSE_LINE);
+    if (clause) { flushAll(); out.push(`<p class="clause">${inline(clause[1])}</p>`); continue; }
     const bullet = line.match(/^[-*+]\s+(.+)$/);
     if (bullet) { flushParagraph(); flushQuote(); if (list !== "ul") { closeList(); list = "ul"; out.push("<ul>"); } out.push(`<li>${inline(bullet[1])}</li>`); continue; }
     const number = line.match(/^\d+[.)]\s+(.+)$/);
